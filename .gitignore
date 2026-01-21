@@ -1,0 +1,14 @@
+# Ignore dependencies
+node_modules/
+
+# Ignore production builds
+dist/
+build/
+
+# Ignore environment secrets
+.env
+.env.local
+
+# Ignore system files
+.DS_Store
+Thumbs.db
