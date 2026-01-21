@@ -1,0 +1,7 @@
+{
+  "name": "Evony Tactician AI",
+  "description": "An advanced AI-powered analyzer for Evony: The King's Return.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
