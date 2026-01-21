@@ -6,13 +6,11 @@ import Auth from './components/Auth';
 import ProfileSetup from './components/ProfileSetup';
 import ReportAnalyzer from './components/ReportAnalyzer';
 import { LogOut, Settings, BarChart3, ShieldAlert } from 'lucide-react';
+import { supabase } from './services/supabaseClient';
 
 const App: React.FC = () => {
   const [lang, setLang] = useState<Language>(() => (localStorage.getItem('evony_lang') as Language) || 'EN');
-  const [auth, setAuth] = useState<AuthState>(() => {
-    const saved = localStorage.getItem('evony_auth');
-    return saved ? JSON.parse(saved) : { isAuthenticated: false, user: null };
-  });
+  const [auth, setAuth] = useState<AuthState>({ isAuthenticated: false, user: null });
   const [profile, setProfile] = useState<UserProfile>(() => {
     const saved = localStorage.getItem('evony_profile');
     return saved ? JSON.parse(saved) : { highestTiers: { Ground: 1, Ranged: 1, Mounted: 1, Siege: 1 }, marchSize: 0, embassyCapacity: 0, isSetup: false };
@@ -21,12 +19,48 @@ const App: React.FC = () => {
   const [inputCode, setInputCode] = useState('');
   const t = translations[lang];
 
-  useEffect(() => { localStorage.setItem('evony_auth', JSON.stringify(auth)); }, [auth]);
+  useEffect(() => {
+    // Check initial session on load
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setAuth({ 
+          isAuthenticated: true, 
+          user: { 
+            email: session.user.email, 
+            name: session.user.user_metadata?.display_name || session.user.email 
+          } 
+        });
+      }
+    });
+
+    // Listen for real-time auth changes (Sign in, Sign out)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setAuth({ 
+          isAuthenticated: true, 
+          user: { 
+            email: session.user.email, 
+            name: session.user.user_metadata?.display_name || session.user.email 
+          } 
+        });
+      } else {
+        setAuth({ isAuthenticated: false, user: null });
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
   useEffect(() => { localStorage.setItem('evony_profile', JSON.stringify(profile)); }, [profile]);
   useEffect(() => { 
     localStorage.setItem('evony_lang', lang);
     document.documentElement.dir = t.isRTL ? 'rtl' : 'ltr';
   }, [lang, t.isRTL]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setAuth({ isAuthenticated: false, user: null });
+  };
 
   if (!accessGranted) {
     return (
@@ -57,7 +91,7 @@ const App: React.FC = () => {
               {['EN', 'AR', 'FR', 'JA', 'ES', 'RU', 'ZH'].map(l => <option key={l} value={l}>{l}</option>)}
             </select>
             <button onClick={() => setProfile({...profile, isSetup: false})} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white"><Settings size={20} /></button>
-            <button onClick={() => { setAuth({ isAuthenticated: false, user: null }); localStorage.removeItem('evony_auth'); }} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400"><LogOut size={20} /></button>
+            <button onClick={handleLogout} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400"><LogOut size={20} /></button>
           </div>
         </div>
       </header>
