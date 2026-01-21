@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Chrome, Facebook, Mail, Lock, User, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { supabase } from '../services/supabaseClient';
 
 interface AuthProps {
   onLogin: (user: any) => void;
@@ -15,39 +16,51 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleAuthAction = (provider: 'google' | 'facebook' | 'email') => {
+  const handleAuthAction = async (provider: 'google' | 'facebook' | 'email') => {
     setError(null);
-    
-    if (provider === 'email') {
-      if (!email || !password) {
-        setError("Missing tactical credentials.");
-        return;
-      }
-      if (!isLogin && password !== confirmPassword) {
-        setError("Authorization secrets do not match.");
-        return;
-      }
-      if (!isLogin && !acceptTerms) {
-        setError("Protocols require agreement to Terms.");
-        return;
-      }
-    }
-
     setLoading(true);
-    // Simulate tactical synchronization with the server
-    setTimeout(() => {
-      onLogin({ 
-        email: email || 'commander@evony.com', 
-        name: name || 'Tactician',
-        provider 
-      });
+
+    try {
+      if (provider === 'email') {
+        if (!email || !password) throw new Error("Missing tactical credentials.");
+        
+        if (isLogin) {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          if (data.user) onLogin(data.user);
+        } else {
+          if (password !== confirmPassword) throw new Error("Authorization secrets do not match.");
+          if (!acceptTerms) throw new Error("Protocols require agreement to Terms.");
+          
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: { display_name: name }
+            }
+          });
+          if (error) throw error;
+          alert("Check your inbox for the tactical confirmation link!");
+        }
+      } else {
+        // OAuth flow (Google/Facebook)
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider,
+          options: {
+            redirectTo: window.location.origin
+          }
+        });
+        if (error) throw error;
+      }
+    } catch (err: any) {
+      setError(err.message || "A tactical failure occurred.");
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6 relative overflow-hidden">
-      {/* Background Ambience / Tactical Grid feel */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-amber-500/5 blur-[120px] rounded-full"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-indigo-600/5 blur-[120px] rounded-full"></div>
       <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
