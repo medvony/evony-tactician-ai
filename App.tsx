@@ -23,10 +23,8 @@ const App: React.FC = () => {
   useEffect(() => {
     const mapSessionToAuth = (session: any) => {
       if (!session) return { isAuthenticated: false, user: null };
-      
       const { user } = session;
       const metadata = user?.user_metadata || {};
-      
       return {
         isAuthenticated: true,
         user: {
@@ -38,43 +36,34 @@ const App: React.FC = () => {
       };
     };
 
-    // Initial session check
-    const initAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          setAuth(mapSessionToAuth(session));
-          // Clean up the hash from the URL if it exists (tokens/redirect data)
-          if (window.location.hash) {
-            window.history.replaceState(null, '', window.location.pathname);
-          }
-        }
-      } catch (err) {
-        console.error("Tactical connection failed:", err);
-      } finally {
-        setIsAuthLoading(false);
-      }
-    };
-
-    initAuth();
-
-    // Set up auth listener for redirects and sign-ins
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const handleSession = (session: any) => {
       if (session) {
         setAuth(mapSessionToAuth(session));
-        if (window.location.hash) {
+        // Immediately clean URL if we have a session and a hash exists
+        if (window.location.hash.includes('access_token')) {
           window.history.replaceState(null, '', window.location.pathname);
         }
       } else {
         setAuth({ isAuthenticated: false, user: null });
       }
       setIsAuthLoading(false);
+    };
+
+    // 1. Check current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      handleSession(session);
+    });
+
+    // 2. Listen for changes (Crucial for OAuth redirects)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      handleSession(session);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => { localStorage.setItem('evony_profile', JSON.stringify(profile)); }, [profile]);
+  
   useEffect(() => { 
     localStorage.setItem('evony_lang', lang);
     if (document.documentElement) {
@@ -84,6 +73,8 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    localStorage.removeItem('evony_access');
+    setAccessGranted(false);
     setAuth({ isAuthenticated: false, user: null });
   };
 
@@ -96,17 +87,23 @@ const App: React.FC = () => {
     }
   };
 
-  // 1. Loading state must be checked first to prevent flickering login screens
+  // 1. Show loader while figuring out if we are logged in from a redirect
   if (isAuthLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100">
         <Loader2 className="w-12 h-12 text-amber-500 animate-spin mb-4" />
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 animate-pulse">Establishing Tactical Uplink...</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 animate-pulse">Establishing Tactical Link...</p>
       </div>
     );
   }
 
-  // 2. Global Gate: Access Code
+  // 2. If NOT logged in, show Auth screen first. 
+  // This ensures the Auth component can handle the redirect tokens properly.
+  if (!auth.isAuthenticated) {
+    return <Auth onLogin={(user) => setAuth({ isAuthenticated: true, user })} />;
+  }
+
+  // 3. If logged in but haven't entered the SECRET ACCESS CODE yet
   if (!accessGranted) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden">
@@ -117,7 +114,6 @@ const App: React.FC = () => {
           </div>
           <h1 className="text-3xl font-black text-white mb-2 italic tracking-tighter uppercase">Clearance Required</h1>
           <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-8">Strategist ID Verification</p>
-          
           <input 
             type="password" 
             placeholder="ACCESS TOKEN" 
@@ -126,23 +122,12 @@ const App: React.FC = () => {
             onChange={(e) => setInputCode(e.target.value)} 
             onKeyDown={(e) => e.key === 'Enter' && handleAccessCodeSubmit()} 
           />
-          
-          <button 
-            onClick={handleAccessCodeSubmit} 
-            className="w-full bg-amber-500 py-4 rounded-2xl font-black text-slate-950 hover:bg-amber-400 transition-all shadow-xl shadow-amber-500/20 active:scale-95"
-          >
+          <button onClick={handleAccessCodeSubmit} className="w-full bg-amber-500 py-4 rounded-2xl font-black text-slate-950 hover:bg-amber-400 transition-all shadow-xl shadow-amber-500/20 active:scale-95">
             DECRYPT & ENTER
           </button>
-          
-          <p className="mt-8 text-[9px] text-slate-600 font-bold uppercase tracking-[0.2em]">Contact Command for Authorization</p>
         </div>
       </div>
     );
-  }
-
-  // 3. Auth Gate
-  if (!auth.isAuthenticated) {
-    return <Auth onLogin={(user) => setAuth({ isAuthenticated: true, user })} />;
   }
 
   // 4. Main Application
@@ -169,18 +154,10 @@ const App: React.FC = () => {
             >
               {['EN', 'AR', 'FR', 'JA', 'ES', 'RU', 'ZH'].map(l => <option key={l} value={l}>{l}</option>)}
             </select>
-            <button 
-              onClick={() => setProfile({...profile, isSetup: false})} 
-              className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
-              title="Settings"
-            >
+            <button onClick={() => setProfile({...profile, isSetup: false})} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
               <Settings size={20} />
             </button>
-            <button 
-              onClick={handleLogout} 
-              className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
-              title="Logout"
-            >
+            <button onClick={handleLogout} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors">
               <LogOut size={20} />
             </button>
           </div>
