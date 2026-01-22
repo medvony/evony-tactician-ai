@@ -15,9 +15,11 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const handleAuthAction = async (provider: 'discord' | 'email') => {
     setError(null);
+    setSuccessMsg(null);
     setLoading(true);
 
     try {
@@ -35,14 +37,17 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           const { data, error: signUpError } = await supabase.auth.signUp({
             email,
             password,
-            options: { data: { display_name: name } }
+            options: { 
+              data: { display_name: name }, 
+              emailRedirectTo: window.location.origin 
+            }
           });
           if (signUpError) throw signUpError;
           
           if (data.user && data.session) {
             onLogin(data.user);
           } else {
-            alert("Verification signal transmitted! Check your email to activate your command link.");
+            setSuccessMsg("Verification signal transmitted! Check your email (and SPAM folder) to activate your command link. It may take 1-2 minutes to arrive.");
           }
         }
       } else {
@@ -81,6 +86,12 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         {error && (
           <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold text-center animate-pulse">
             {error}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-[10px] font-bold text-center">
+            {successMsg}
           </div>
         )}
 
@@ -169,18 +180,20 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             <div className="absolute top-1/2 w-full h-[1px] bg-slate-800/30"></div>
           </div>
 
-          <button 
-            onClick={() => handleAuthAction('discord')} 
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-3 bg-[#5865F2] hover:bg-[#4752c4] py-4 rounded-2xl transition-all shadow-xl active:scale-95 text-white font-black text-xs uppercase tracking-widest border-b-4 border-[#3e48ae]"
-          >
-            <MessageSquare size={18} fill="currentColor" />
-            Connect via Discord
-          </button>
+          <div className="grid grid-cols-1 gap-3">
+            <button 
+              onClick={() => handleAuthAction('discord')} 
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-3 bg-[#5865F2] hover:bg-[#4752c4] py-3.5 rounded-2xl transition-all shadow-lg active:scale-95 text-white font-black text-xs uppercase tracking-widest border-b-4 border-[#3e48ae]"
+            >
+              <MessageSquare size={18} fill="currentColor" />
+              Sign in with Discord
+            </button>
+          </div>
 
           <div className="pt-8 text-center border-t border-slate-800/50 mt-6">
             <button 
-              onClick={() => { setIsLogin(!isLogin); setError(null); }} 
+              onClick={() => { setIsLogin(!isLogin); setError(null); setSuccessMsg(null); }} 
               className="text-[10px] text-slate-500 hover:text-amber-500 font-black transition-colors underline underline-offset-8 decoration-slate-800 hover:decoration-amber-500/30 uppercase tracking-widest block w-full"
             >
               {isLogin ? "NEW STRATEGIST? ENLIST HERE" : "EXISTING INTEL? RETURN TO PORTAL"}
