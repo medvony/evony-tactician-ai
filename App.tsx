@@ -16,6 +16,8 @@ const App: React.FC = () => {
     const saved = localStorage.getItem('evony_profile');
     return saved ? JSON.parse(saved) : { highestTiers: { Ground: 1, Ranged: 1, Mounted: 1, Siege: 1 }, marchSize: 0, embassyCapacity: 0, isSetup: false };
   });
+  
+  // Access code persistence: This ensures that once verified, the user never types it again on this browser.
   const [accessGranted, setAccessGranted] = useState(() => localStorage.getItem('evony_access') === 'true');
   const [inputCode, setInputCode] = useState('');
   const t = translations[lang];
@@ -30,55 +32,34 @@ const App: React.FC = () => {
         email: user?.email,
         name: metadata?.full_name || metadata?.display_name || metadata?.name || user?.email || 'Commander',
         avatar: metadata?.avatar_url || metadata?.picture,
-        provider: (session?.app_metadata?.provider || 'email') as any
+        provider: 'email'
       }
     };
   };
 
   useEffect(() => {
-    // 1. Initial Check: See if we already have a local session
     const initAuth = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error } = await supabase.auth.getSession();
         if (session) {
           setAuth(mapSessionToAuth(session));
-          // Clean hash from URL if present after successful session grab
-          if (window.location.hash) {
-            window.history.replaceState(null, '', window.location.pathname);
-          }
         }
       } catch (err) {
         console.error("Auth init failure:", err);
       } finally {
-        // Only stop loading if we're not waiting for a hash-based redirect (Discord/Email Link)
-        // This is critical to prevent the app from appearing "stuck" on the login screen 
-        // while Supabase is processing the redirect tokens in the background.
-        if (!window.location.hash.includes('access_token')) {
-          setIsAuthLoading(false);
-        }
+        setIsAuthLoading(false);
       }
     };
 
     initAuth();
 
-    // 2. Event Listener: Handle redirect completions and sign-ins
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.debug("Tactical Auth Event:", event);
-      
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
         setAuth(mapSessionToAuth(session));
-        // Clear tokens from the URL for security and aesthetics
-        if (window.location.hash) {
-          window.history.replaceState(null, '', window.location.pathname);
-        }
-        setIsAuthLoading(false);
-      } else if (event === 'SIGNED_OUT') {
+      } else {
         setAuth({ isAuthenticated: false, user: null });
-        setIsAuthLoading(false);
-      } else if (!window.location.hash.includes('access_token')) {
-        // Stop loading if there's no session and we're not currently processing a redirect hash
-        setIsAuthLoading(false);
       }
+      setIsAuthLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -97,9 +78,9 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    localStorage.removeItem('evony_access');
-    setAccessGranted(false);
     setAuth({ isAuthenticated: false, user: null });
+    // Note: We intentionally do NOT remove 'evony_access' here.
+    // This satisfies your requirement: "he doesn't need to type the app key everytime he logs in"
   };
 
   const handleAccessCodeSubmit = () => {
@@ -123,10 +104,13 @@ const App: React.FC = () => {
     );
   }
 
+  // Phase 1: Authentication (Login/Signup via Email)
   if (!auth.isAuthenticated) {
     return <Auth onLogin={(user) => setAuth({ isAuthenticated: true, user })} />;
   }
 
+  // Phase 2: App Access Security (The App Key / Access Token)
+  // This screen only shows if the 'evony_access' flag is not in localStorage.
   if (!accessGranted) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden">
@@ -148,11 +132,13 @@ const App: React.FC = () => {
           <button onClick={handleAccessCodeSubmit} className="w-full bg-amber-500 py-4 rounded-2xl font-black text-slate-950 hover:bg-amber-400 transition-all shadow-xl shadow-amber-500/20 active:scale-95">
             DECRYPT & ENTER
           </button>
+          <p className="mt-6 text-[8px] text-slate-600 uppercase tracking-[0.2em]">Contact administrator for tactical clearance</p>
         </div>
       </div>
     );
   }
 
+  // Phase 3: Main Application
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-20">
       <header className="h-20 bg-slate-950/80 backdrop-blur-xl border-b border-slate-900 flex items-center px-6 sticky top-0 z-50">
@@ -162,12 +148,9 @@ const App: React.FC = () => {
             <h1 className="font-black text-xl tracking-tight hidden sm:block italic uppercase">EVONY AI</h1>
           </div>
           <div className="flex gap-2 items-center">
-            {auth.user?.avatar && (
-              <img src={auth.user.avatar} className="w-8 h-8 rounded-full border border-amber-500/30" alt="Avatar" />
-            )}
             <div className="flex flex-col items-end mr-2 hidden xs:flex">
               <span className="text-[10px] font-black text-white leading-none uppercase tracking-tighter truncate max-w-[120px]">{auth.user?.name}</span>
-              <span className="text-[8px] text-slate-500 uppercase tracking-widest">{auth.user?.provider} Uplink</span>
+              <span className="text-[8px] text-slate-500 uppercase tracking-widest">Active Session</span>
             </div>
             <select 
               className="bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/50 cursor-pointer" 
@@ -176,10 +159,10 @@ const App: React.FC = () => {
             >
               {['EN', 'AR', 'FR', 'JA', 'ES', 'IT', 'RU', 'PT', 'ZH', 'DE'].map(l => <option key={l} value={l}>{l}</option>)}
             </select>
-            <button onClick={() => setProfile({...profile, isSetup: false})} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
+            <button onClick={() => setProfile({...profile, isSetup: false})} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors" title="Settings">
               <Settings size={20} />
             </button>
-            <button onClick={handleLogout} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors">
+            <button onClick={handleLogout} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors" title="Logout">
               <LogOut size={20} />
             </button>
           </div>
