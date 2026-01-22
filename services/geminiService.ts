@@ -6,7 +6,12 @@ export const analyzeReports = async (
   images: string[], 
   profile: UserProfile
 ): Promise<AnalysisResponse> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("Gemini API Key is missing. Please set API_KEY in your environment variables.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
   const model = 'gemini-3-pro-preview';
   
   const imageParts = images.map(img => {
@@ -36,47 +41,54 @@ export const analyzeReports = async (
     ### DATA_EXTRACTION
   `;
 
-  const response = await ai.models.generateContent({
-    model,
-    contents: { parts: [...imageParts, { text: prompt }] },
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      tools: [{ googleSearch: {} }],
+  try {
+    const response = await ai.models.generateContent({
+      model,
+      contents: { parts: [...imageParts, { text: prompt }] },
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        tools: [{ googleSearch: {} }],
+      }
+    });
+
+    const text = response.text || "";
+    
+    const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks
+      ?.map((chunk: any) => ({
+        title: chunk.web?.title || "Tactical Reference",
+        uri: chunk.web?.uri || "#"
+      }))
+      .filter((s: any) => s.uri !== "#") || [];
+
+    const extractSection = (header: string) => {
+      const regex = new RegExp(`${header}[\\s\\S]*?(?=###|$)`, 'i');
+      const match = text.match(regex);
+      if (!match) return "";
+      return match[0].replace(new RegExp(header, 'i'), "").trim();
+    };
+
+    const enemyIntel = extractSection("### ENEMY_INTEL");
+    const march = extractSection("### RECOMMENDED_MARCH");
+    const tactical = extractSection("### TACTICAL_SUMMARY");
+    const dataExt = extractSection("### DATA_EXTRACTION");
+
+    if (!enemyIntel && !march && !text) {
+      throw new Error("The AI failed to generate a structured response. Please try again.");
     }
-  });
 
-  const text = response.text || "";
-  
-  const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks
-    ?.map((chunk: any) => ({
-      title: chunk.web?.title || "Tactical Reference",
-      uri: chunk.web?.uri || "#"
-    }))
-    .filter((s: any) => s.uri !== "#") || [];
-
-  const extractSection = (header: string) => {
-    const regex = new RegExp(`${header}[\\s\\S]*?(?=###|$)`, 'i');
-    const match = text.match(regex);
-    if (!match) return "";
-    return match[0].replace(new RegExp(header, 'i'), "").trim();
-  };
-
-  const enemyIntel = extractSection("### ENEMY_INTEL");
-  const march = extractSection("### RECOMMENDED_MARCH");
-  const tactical = extractSection("### TACTICAL_SUMMARY");
-  const dataExt = extractSection("### DATA_EXTRACTION");
-
-  if (!enemyIntel && !march && !text) {
-    throw new Error("The AI failed to generate a structured response. Please try again.");
+    return {
+      reportType: text.toLowerCase().includes('monster') ? 'Monster' : 'Attack',
+      summary: enemyIntel || tactical ? `**Enemy Intel:**\n${enemyIntel || 'No intel detected.'}\n\n**Tactical Logic:**\n${tactical || 'Standard strategy applied.'}` : "Summary unavailable.",
+      recommendations: march || "Tactical configuration failed to generate.",
+      anonymizedData: dataExt,
+      sources
+    };
+  } catch (err: any) {
+    if (err.message?.includes('Failed to fetch')) {
+      throw new Error("Uplink Error: Failed to fetch data from Gemini AI. Check your API_KEY and internet connection.");
+    }
+    throw err;
   }
-
-  return {
-    reportType: text.toLowerCase().includes('monster') ? 'Monster' : 'Attack',
-    summary: enemyIntel || tactical ? `**Enemy Intel:**\n${enemyIntel || 'No intel detected.'}\n\n**Tactical Logic:**\n${tactical || 'Standard strategy applied.'}` : "Summary unavailable.",
-    recommendations: march || "Tactical configuration failed to generate.",
-    anonymizedData: dataExt,
-    sources
-  };
 };
 
 export async function* chatWithAIStream(
@@ -86,7 +98,10 @@ export async function* chatWithAIStream(
   currentAnalysis: AnalysisResponse | null,
   attachments: string[] = []
 ) {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error("API Key Missing");
+
+  const ai = new GoogleGenAI({ apiKey });
   const model = 'gemini-3-pro-preview'; 
 
   const analysisContext = currentAnalysis 
