@@ -5,12 +5,13 @@ import { translations } from './translations';
 import Auth from './components/Auth';
 import ProfileSetup from './components/ProfileSetup';
 import ReportAnalyzer from './components/ReportAnalyzer';
-import { LogOut, Settings, BarChart3, ShieldAlert } from 'lucide-react';
+import { LogOut, Settings, BarChart3, ShieldAlert, Loader2 } from 'lucide-react';
 import { supabase } from './services/supabaseClient';
 
 const App: React.FC = () => {
   const [lang, setLang] = useState<Language>(() => (localStorage.getItem('evony_lang') as Language) || 'EN');
   const [auth, setAuth] = useState<AuthState>({ isAuthenticated: false, user: null });
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile>(() => {
     const saved = localStorage.getItem('evony_profile');
     return saved ? JSON.parse(saved) : { highestTiers: { Ground: 1, Ranged: 1, Mounted: 1, Siege: 1 }, marchSize: 0, embassyCapacity: 0, isSetup: false };
@@ -24,27 +25,50 @@ const App: React.FC = () => {
       if (!session) return { isAuthenticated: false, user: null };
       
       const { user } = session;
-      const metadata = user.user_metadata;
+      const metadata = user?.user_metadata || {};
       
       return {
         isAuthenticated: true,
         user: {
-          email: user.email,
-          name: metadata?.full_name || metadata?.display_name || metadata?.name || user.email,
+          email: user?.email,
+          name: metadata?.full_name || metadata?.display_name || metadata?.name || user?.email || 'Commander',
           avatar: metadata?.avatar_url || metadata?.picture,
-          provider: session.app_metadata?.provider as any
+          provider: (session?.app_metadata?.provider || 'email') as any
         }
       };
     };
 
-    // Check initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setAuth(mapSessionToAuth(session));
-    });
+    // Initial session check
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setAuth(mapSessionToAuth(session));
+          // Clean up the hash from the URL if it exists (tokens/redirect data)
+          if (window.location.hash) {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
+        }
+      } catch (err) {
+        console.error("Tactical connection failed:", err);
+      } finally {
+        setIsAuthLoading(false);
+      }
+    };
 
-    // Listen for auth changes
+    initAuth();
+
+    // Set up auth listener for redirects and sign-ins
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuth(mapSessionToAuth(session));
+      if (session) {
+        setAuth(mapSessionToAuth(session));
+        if (window.location.hash) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      } else {
+        setAuth({ isAuthenticated: false, user: null });
+      }
+      setIsAuthLoading(false);
     });
 
     return () => subscription.unsubscribe();
@@ -63,22 +87,65 @@ const App: React.FC = () => {
     setAuth({ isAuthenticated: false, user: null });
   };
 
+  const handleAccessCodeSubmit = () => {
+    if (inputCode.trim() === ACCESS_CODE) {
+      setAccessGranted(true);
+      localStorage.setItem('evony_access', 'true');
+    } else {
+      alert("Unauthorized entry. Access denied.");
+    }
+  };
+
+  // 1. Loading state must be checked first to prevent flickering login screens
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100">
+        <Loader2 className="w-12 h-12 text-amber-500 animate-spin mb-4" />
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 animate-pulse">Establishing Tactical Uplink...</p>
+      </div>
+    );
+  }
+
+  // 2. Global Gate: Access Code
   if (!accessGranted) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-slate-900 border border-slate-800 p-10 rounded-3xl text-center shadow-2xl">
-          <ShieldAlert size={48} className="mx-auto text-amber-500 mb-4" />
-          <h1 className="text-3xl font-black text-white mb-2">Access Code</h1>
-          <p className="text-slate-500 text-sm mb-6">Enter the tactical authorization code.</p>
-          <input type="password" placeholder="••••••••" className="w-full bg-slate-950 border border-slate-700 rounded-xl p-4 text-center text-white mb-4 outline-none font-mono" value={inputCode} onChange={(e) => setInputCode(e.target.value)} />
-          <button onClick={() => { if(inputCode === ACCESS_CODE) { setAccessGranted(true); localStorage.setItem('evony_access', 'true'); } else alert("Denied"); }} className="w-full bg-amber-500 py-4 rounded-xl font-black text-slate-950">Authenticate</button>
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden">
+        <div className="absolute -top-[10%] -left-[10%] w-[60%] h-[60%] bg-amber-500/5 blur-[120px] rounded-full"></div>
+        <div className="max-w-md w-full bg-slate-900/40 backdrop-blur-2xl border border-slate-800/50 p-10 rounded-[2.5rem] text-center shadow-2xl relative z-10">
+          <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/20 rounded-3xl flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert size={40} className="text-amber-500" />
+          </div>
+          <h1 className="text-3xl font-black text-white mb-2 italic tracking-tighter uppercase">Clearance Required</h1>
+          <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mb-8">Strategist ID Verification</p>
+          
+          <input 
+            type="password" 
+            placeholder="ACCESS TOKEN" 
+            className="w-full bg-slate-950/50 border border-slate-800 rounded-2xl p-4 text-center text-white mb-4 outline-none font-mono focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-800" 
+            value={inputCode} 
+            onChange={(e) => setInputCode(e.target.value)} 
+            onKeyDown={(e) => e.key === 'Enter' && handleAccessCodeSubmit()} 
+          />
+          
+          <button 
+            onClick={handleAccessCodeSubmit} 
+            className="w-full bg-amber-500 py-4 rounded-2xl font-black text-slate-950 hover:bg-amber-400 transition-all shadow-xl shadow-amber-500/20 active:scale-95"
+          >
+            DECRYPT & ENTER
+          </button>
+          
+          <p className="mt-8 text-[9px] text-slate-600 font-bold uppercase tracking-[0.2em]">Contact Command for Authorization</p>
         </div>
       </div>
     );
   }
 
-  if (!auth.isAuthenticated) return <Auth onLogin={(user) => setAuth({ isAuthenticated: true, user })} />;
+  // 3. Auth Gate
+  if (!auth.isAuthenticated) {
+    return <Auth onLogin={(user) => setAuth({ isAuthenticated: true, user })} />;
+  }
 
+  // 4. Main Application
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-20">
       <header className="h-20 bg-slate-950/80 backdrop-blur-xl border-b border-slate-900 flex items-center px-6 sticky top-0 z-50">
@@ -91,11 +158,31 @@ const App: React.FC = () => {
             {auth.user?.avatar && (
               <img src={auth.user.avatar} className="w-8 h-8 rounded-full border border-amber-500/30" alt="Avatar" />
             )}
-            <select className="bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-bold" value={lang} onChange={(e) => setLang(e.target.value as Language)}>
+            <div className="flex flex-col items-end mr-2 hidden xs:flex">
+              <span className="text-[10px] font-black text-white leading-none uppercase tracking-tighter truncate max-w-[120px]">{auth.user?.name}</span>
+              <span className="text-[8px] text-slate-500 uppercase tracking-widest">{auth.user?.provider}</span>
+            </div>
+            <select 
+              className="bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/50 cursor-pointer" 
+              value={lang} 
+              onChange={(e) => setLang(e.target.value as Language)}
+            >
               {['EN', 'AR', 'FR', 'JA', 'ES', 'RU', 'ZH'].map(l => <option key={l} value={l}>{l}</option>)}
             </select>
-            <button onClick={() => setProfile({...profile, isSetup: false})} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white"><Settings size={20} /></button>
-            <button onClick={handleLogout} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400"><LogOut size={20} /></button>
+            <button 
+              onClick={() => setProfile({...profile, isSetup: false})} 
+              className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+              title="Settings"
+            >
+              <Settings size={20} />
+            </button>
+            <button 
+              onClick={handleLogout} 
+              className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors"
+              title="Logout"
+            >
+              <LogOut size={20} />
+            </button>
           </div>
         </div>
       </header>
@@ -107,13 +194,18 @@ const App: React.FC = () => {
           <>
             <div className="mb-10">
               <div className="flex items-center gap-2 mb-2">
-                <span className="bg-amber-500/10 text-amber-500 text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-widest border border-amber-500/20">Active Session</span>
-                <span className="text-slate-500 text-xs font-bold">{auth.user?.name}</span>
+                <span className="bg-amber-500/10 text-amber-500 text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-widest border border-amber-500/20">Tactical Command Center</span>
               </div>
-              <h2 className="text-4xl font-black text-white mb-4">{t.battleCenter}</h2>
+              <h2 className="text-4xl font-black text-white mb-4 tracking-tighter italic">{t.battleCenter}</h2>
               <div className="flex flex-wrap gap-4">
-                <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex-1 min-w-[150px]"><span className="text-xs text-slate-500 uppercase font-bold block">{t.marchSize}</span><span className="text-amber-500 font-mono text-xl">{profile.marchSize.toLocaleString()}</span></div>
-                <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex-1 min-w-[150px]"><span className="text-xs text-slate-500 uppercase font-bold block">{t.embassyCap}</span><span className="text-amber-500 font-mono text-xl">{profile.embassyCapacity.toLocaleString()}</span></div>
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 flex-1 min-w-[150px] backdrop-blur-sm">
+                  <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">{t.marchSize}</span>
+                  <span className="text-amber-500 font-mono text-xl font-bold">{profile.marchSize.toLocaleString()}</span>
+                </div>
+                <div className="bg-slate-900/50 p-4 rounded-xl border border-slate-800 flex-1 min-w-[150px] backdrop-blur-sm">
+                  <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-1">{t.embassyCap}</span>
+                  <span className="text-amber-500 font-mono text-xl font-bold">{profile.embassyCapacity.toLocaleString()}</span>
+                </div>
               </div>
             </div>
             <ReportAnalyzer profile={profile} lang={lang} />
