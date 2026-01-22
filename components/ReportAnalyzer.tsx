@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef } from 'react';
 import { FileImage, Loader2, Send, Trash2, ShieldCheck, Sword, PlusCircle, ExternalLink } from 'lucide-react';
 import { UserProfile, AnalysisResponse, ChatMessage, Language } from '../types';
 import { translations } from '../translations';
@@ -44,6 +44,14 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
     } catch (err) { console.error(err); } finally { setChatting(false); }
   };
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Send message on Enter, but allow Shift+Enter for new lines
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl">
@@ -52,15 +60,26 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
           {images.map((img, i) => (
             <div key={i} className="aspect-[3/4] rounded-lg overflow-hidden relative group border border-slate-700">
               <img src={img} className="w-full h-full object-cover" alt={`Report ${i}`} />
-              <button onClick={() => setImages(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 p-1 bg-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12} /></button>
+              <button onClick={() => setImages(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-1 right-1 p-1 bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={12} /></button>
             </div>
           ))}
-          <button onClick={() => fileInputRef.current?.click()} className="aspect-[3/4] border-2 border-dashed border-slate-700 rounded-lg flex flex-col items-center justify-center text-slate-500 hover:text-amber-500 hover:border-amber-500 bg-slate-950">
-            <PlusCircle size={24} /> <span className="text-xs mt-1">Upload</span>
+          <button 
+            onClick={() => fileInputRef.current?.click()} 
+            className="aspect-[3/4] border-2 border-dashed border-slate-700 rounded-lg flex flex-col items-center justify-center text-slate-500 hover:text-amber-500 hover:border-amber-500 bg-slate-950 transition-colors"
+          >
+            <PlusCircle size={24} /> 
+            <span className="text-[10px] mt-2 font-black uppercase tracking-widest text-center px-2">Gallery / Files</span>
           </button>
         </div>
-        <input type="file" multiple hidden ref={fileInputRef} onChange={handleFileChange} />
-        <button disabled={images.length === 0 || analyzing} onClick={async () => { setAnalyzing(true); try { const res = await analyzeReports(images, profile); setResult(res); } catch(e) { alert("Error"); } finally { setAnalyzing(false); } }} className="w-full bg-indigo-600 py-4 rounded-xl font-black flex items-center justify-center gap-2 hover:bg-indigo-500 disabled:bg-slate-800">
+        <input 
+          type="file" 
+          multiple 
+          hidden 
+          ref={fileInputRef} 
+          onChange={handleFileChange} 
+          accept="image/*" 
+        />
+        <button disabled={images.length === 0 || analyzing} onClick={async () => { setAnalyzing(true); try { const res = await analyzeReports(images, profile); setResult(res); } catch(e) { alert("Error during analysis"); } finally { setAnalyzing(false); } }} className="w-full bg-indigo-600 py-4 rounded-xl font-black flex items-center justify-center gap-2 hover:bg-indigo-500 disabled:bg-slate-800 transition-all">
           {analyzing ? <Loader2 className="animate-spin" /> : <Sword size={20} />} {analyzing ? t.strategizing : t.runAnalysis}
         </button>
       </div>
@@ -70,7 +89,7 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
           <div className="p-6 space-y-6">
             <section className="bg-slate-950 p-5 rounded-xl border border-slate-800">
               <h5 className="text-[10px] font-black uppercase text-amber-500 mb-2 flex items-center gap-2"><ShieldCheck size={14} /> {t.intelHeader}</h5>
-              <div className="text-slate-300 whitespace-pre-wrap text-sm">{result.summary}</div>
+              <div className="text-slate-300 whitespace-pre-wrap text-sm leading-relaxed">{result.summary}</div>
             </section>
             
             {result.sources && result.sources.length > 0 && (
@@ -91,16 +110,26 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
               <div className="text-white font-mono text-sm whitespace-pre-wrap">{result.recommendations}</div>
             </section>
             <div className="border-t border-slate-800 pt-6">
-              <div className="space-y-4 max-h-[400px] overflow-y-auto mb-4 bg-slate-950 p-4 rounded-xl">
+              <div className="space-y-4 max-h-[400px] overflow-y-auto mb-4 bg-slate-950 p-4 rounded-xl custom-scrollbar">
                 {chatMessages.map((msg, i) => (
                   <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`p-3 rounded-xl text-sm max-w-[80%] ${msg.role === 'user' ? 'bg-amber-500 text-slate-950 font-bold' : 'bg-slate-800 text-white border border-slate-700'}`}>{msg.text || "..."}</div>
+                    <div className={`p-3 rounded-xl text-sm max-w-[85%] leading-relaxed ${msg.role === 'user' ? 'bg-amber-500 text-slate-950 font-bold' : 'bg-slate-800 text-white border border-slate-700'}`}>{msg.text || "..."}</div>
                   </div>
                 ))}
               </div>
-              <div className="flex gap-2">
-                <input type="text" className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none" placeholder="Ask follow-up..." value={input} onChange={(e) => setInput(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()} />
-                <button onClick={handleSendMessage} className="bg-amber-500 p-3 rounded-xl text-slate-950"><Send size={20} /></button>
+              <div className="flex gap-2 items-end">
+                <textarea 
+                  className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-1 focus:ring-amber-500/50 transition-all resize-none min-h-[52px] max-h-[150px] text-sm leading-relaxed" 
+                  placeholder="Ask follow-up..." 
+                  value={input} 
+                  onChange={(e) => setInput(e.target.value)} 
+                  onKeyDown={handleKeyDown}
+                  rows={1}
+                  style={{ height: 'auto', minHeight: '52px' }}
+                />
+                <button onClick={handleSendMessage} className="bg-amber-500 p-3.5 rounded-xl text-slate-950 hover:bg-amber-400 transition-colors shadow-lg active:scale-95 flex-shrink-0 self-end">
+                  <Send size={20} />
+                </button>
               </div>
             </div>
           </div>
