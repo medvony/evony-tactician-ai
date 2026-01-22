@@ -37,18 +37,15 @@ const App: React.FC = () => {
     };
 
     const handleSessionState = (session: any) => {
-      // Check if we are in the middle of a redirect callback
       const hasHash = window.location.hash.includes('access_token') || window.location.hash.includes('error');
       
       if (session) {
         setAuth(mapSessionToAuth(session));
         if (window.location.hash) {
-          // Clean the URL hash to keep the interface tidy and prevent session re-processing
           window.history.replaceState(null, '', window.location.pathname);
         }
         setIsAuthLoading(false);
       } else {
-        // If there's an active hash being processed by Supabase, stay in loading state
         if (!hasHash) {
           setAuth({ isAuthenticated: false, user: null });
           setIsAuthLoading(false);
@@ -56,12 +53,10 @@ const App: React.FC = () => {
       }
     };
 
-    // 1. Check for an existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
       handleSessionState(session);
     });
 
-    // 2. Listen for Auth events (Login, Logout, Initial Session)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
         handleSessionState(session);
@@ -74,12 +69,10 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Sync profile to localStorage whenever it changes
   useEffect(() => { 
     localStorage.setItem('evony_profile', JSON.stringify(profile)); 
   }, [profile]);
   
-  // Sync language and document direction (for RTL support)
   useEffect(() => { 
     localStorage.setItem('evony_lang', lang);
     if (document.documentElement) {
@@ -103,7 +96,6 @@ const App: React.FC = () => {
     }
   };
 
-  // UI STATE 1: Critical System Loading
   if (isAuthLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100">
@@ -116,12 +108,10 @@ const App: React.FC = () => {
     );
   }
 
-  // UI STATE 2: Authentication Required
   if (!auth.isAuthenticated) {
     return <Auth onLogin={(user) => setAuth({ isAuthenticated: true, user })} />;
   }
 
-  // UI STATE 3: Security Clearance (Access Code)
   if (!accessGranted) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden">
@@ -148,7 +138,6 @@ const App: React.FC = () => {
     );
   }
 
-  // UI STATE 4: Main Strategic Command Center
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-20">
       <header className="h-20 bg-slate-950/80 backdrop-blur-xl border-b border-slate-900 flex items-center px-6 sticky top-0 z-50">
@@ -175,7 +164,7 @@ const App: React.FC = () => {
             <button onClick={() => setProfile({...profile, isSetup: false})} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
               <Settings size={20} />
             </button>
-            <button handleLogout={handleLogout} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors">
+            <button onClick={handleLogout} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors">
               <LogOut size={20} />
             </button>
           </div>
