@@ -36,34 +36,50 @@ const App: React.FC = () => {
       };
     };
 
-    const handleSession = (session: any) => {
+    const handleSessionState = (session: any) => {
+      // Check if we are in the middle of a redirect callback
+      const hasHash = window.location.hash.includes('access_token') || window.location.hash.includes('error');
+      
       if (session) {
         setAuth(mapSessionToAuth(session));
-        // Immediately clean URL if we have a session and a hash exists
-        if (window.location.hash.includes('access_token')) {
+        if (window.location.hash) {
+          // Clean the URL hash to keep the interface tidy and prevent session re-processing
           window.history.replaceState(null, '', window.location.pathname);
         }
+        setIsAuthLoading(false);
       } else {
-        setAuth({ isAuthenticated: false, user: null });
+        // If there's an active hash being processed by Supabase, stay in loading state
+        if (!hasHash) {
+          setAuth({ isAuthenticated: false, user: null });
+          setIsAuthLoading(false);
+        }
       }
-      setIsAuthLoading(false);
     };
 
-    // 1. Check current session
+    // 1. Check for an existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
-      handleSession(session);
+      handleSessionState(session);
     });
 
-    // 2. Listen for changes (Crucial for OAuth redirects)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      handleSession(session);
+    // 2. Listen for Auth events (Login, Logout, Initial Session)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
+        handleSessionState(session);
+      } else if (event === 'SIGNED_OUT') {
+        setAuth({ isAuthenticated: false, user: null });
+        setIsAuthLoading(false);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => { localStorage.setItem('evony_profile', JSON.stringify(profile)); }, [profile]);
+  // Sync profile to localStorage whenever it changes
+  useEffect(() => { 
+    localStorage.setItem('evony_profile', JSON.stringify(profile)); 
+  }, [profile]);
   
+  // Sync language and document direction (for RTL support)
   useEffect(() => { 
     localStorage.setItem('evony_lang', lang);
     if (document.documentElement) {
@@ -87,23 +103,25 @@ const App: React.FC = () => {
     }
   };
 
-  // 1. Show loader while figuring out if we are logged in from a redirect
+  // UI STATE 1: Critical System Loading
   if (isAuthLoading) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100">
         <Loader2 className="w-12 h-12 text-amber-500 animate-spin mb-4" />
-        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 animate-pulse">Establishing Tactical Link...</p>
+        <div className="text-center space-y-2">
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-500 animate-pulse">Establishing Secure Uplink</p>
+          <p className="text-[8px] text-slate-600 uppercase tracking-widest">Verifying Strategic Clearance...</p>
+        </div>
       </div>
     );
   }
 
-  // 2. If NOT logged in, show Auth screen first. 
-  // This ensures the Auth component can handle the redirect tokens properly.
+  // UI STATE 2: Authentication Required
   if (!auth.isAuthenticated) {
     return <Auth onLogin={(user) => setAuth({ isAuthenticated: true, user })} />;
   }
 
-  // 3. If logged in but haven't entered the SECRET ACCESS CODE yet
+  // UI STATE 3: Security Clearance (Access Code)
   if (!accessGranted) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden">
@@ -130,14 +148,14 @@ const App: React.FC = () => {
     );
   }
 
-  // 4. Main Application
+  // UI STATE 4: Main Strategic Command Center
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 pb-20">
       <header className="h-20 bg-slate-950/80 backdrop-blur-xl border-b border-slate-900 flex items-center px-6 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto w-full flex justify-between items-center">
           <div className="flex items-center gap-3">
             <BarChart3 className="text-amber-500" />
-            <h1 className="font-black text-xl tracking-tight hidden sm:block italic">EVONY AI</h1>
+            <h1 className="font-black text-xl tracking-tight hidden sm:block italic uppercase">EVONY AI</h1>
           </div>
           <div className="flex gap-2 items-center">
             {auth.user?.avatar && (
@@ -145,7 +163,7 @@ const App: React.FC = () => {
             )}
             <div className="flex flex-col items-end mr-2 hidden xs:flex">
               <span className="text-[10px] font-black text-white leading-none uppercase tracking-tighter truncate max-w-[120px]">{auth.user?.name}</span>
-              <span className="text-[8px] text-slate-500 uppercase tracking-widest">{auth.user?.provider}</span>
+              <span className="text-[8px] text-slate-500 uppercase tracking-widest">{auth.user?.provider} Uplink</span>
             </div>
             <select 
               className="bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-amber-500/50 cursor-pointer" 
@@ -157,7 +175,7 @@ const App: React.FC = () => {
             <button onClick={() => setProfile({...profile, isSetup: false})} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
               <Settings size={20} />
             </button>
-            <button onClick={handleLogout} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors">
+            <button handleLogout={handleLogout} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-red-400 transition-colors">
               <LogOut size={20} />
             </button>
           </div>
