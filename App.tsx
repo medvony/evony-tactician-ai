@@ -20,32 +20,31 @@ const App: React.FC = () => {
   const t = translations[lang];
 
   useEffect(() => {
-    // Check initial session on load
+    const mapSessionToAuth = (session: any) => {
+      if (!session) return { isAuthenticated: false, user: null };
+      
+      const { user } = session;
+      const metadata = user.user_metadata;
+      
+      return {
+        isAuthenticated: true,
+        user: {
+          email: user.email,
+          name: metadata?.full_name || metadata?.display_name || metadata?.name || user.email,
+          avatar: metadata?.avatar_url || metadata?.picture,
+          provider: session.app_metadata?.provider as any
+        }
+      };
+    };
+
+    // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setAuth({ 
-          isAuthenticated: true, 
-          user: { 
-            email: session.user.email, 
-            name: session.user.user_metadata?.display_name || session.user.email 
-          } 
-        });
-      }
+      setAuth(mapSessionToAuth(session));
     });
 
-    // Listen for real-time auth changes (Sign in, Sign out)
+    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) {
-        setAuth({ 
-          isAuthenticated: true, 
-          user: { 
-            email: session.user.email, 
-            name: session.user.user_metadata?.display_name || session.user.email 
-          } 
-        });
-      } else {
-        setAuth({ isAuthenticated: false, user: null });
-      }
+      setAuth(mapSessionToAuth(session));
     });
 
     return () => subscription.unsubscribe();
@@ -54,7 +53,9 @@ const App: React.FC = () => {
   useEffect(() => { localStorage.setItem('evony_profile', JSON.stringify(profile)); }, [profile]);
   useEffect(() => { 
     localStorage.setItem('evony_lang', lang);
-    document.documentElement.dir = t.isRTL ? 'rtl' : 'ltr';
+    if (document.documentElement) {
+      document.documentElement.dir = t.isRTL ? 'rtl' : 'ltr';
+    }
   }, [lang, t.isRTL]);
 
   const handleLogout = async () => {
@@ -84,9 +85,12 @@ const App: React.FC = () => {
         <div className="max-w-6xl mx-auto w-full flex justify-between items-center">
           <div className="flex items-center gap-3">
             <BarChart3 className="text-amber-500" />
-            <h1 className="font-black text-xl tracking-tight hidden sm:block">EVONY AI</h1>
+            <h1 className="font-black text-xl tracking-tight hidden sm:block italic">EVONY AI</h1>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {auth.user?.avatar && (
+              <img src={auth.user.avatar} className="w-8 h-8 rounded-full border border-amber-500/30" alt="Avatar" />
+            )}
             <select className="bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs font-bold" value={lang} onChange={(e) => setLang(e.target.value as Language)}>
               {['EN', 'AR', 'FR', 'JA', 'ES', 'RU', 'ZH'].map(l => <option key={l} value={l}>{l}</option>)}
             </select>
@@ -102,10 +106,14 @@ const App: React.FC = () => {
         ) : (
           <>
             <div className="mb-10">
-              <h2 className="text-4xl font-black text-white mb-2">{t.battleCenter}</h2>
-              <div className="flex gap-4">
-                <div className="bg-slate-900 p-4 rounded-xl border border-slate-800"><span className="text-xs text-slate-500 uppercase font-bold block">{t.marchSize}</span><span className="text-amber-500 font-mono text-xl">{profile.marchSize.toLocaleString()}</span></div>
-                <div className="bg-slate-900 p-4 rounded-xl border border-slate-800"><span className="text-xs text-slate-500 uppercase font-bold block">{t.embassyCap}</span><span className="text-amber-500 font-mono text-xl">{profile.embassyCapacity.toLocaleString()}</span></div>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="bg-amber-500/10 text-amber-500 text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-widest border border-amber-500/20">Active Session</span>
+                <span className="text-slate-500 text-xs font-bold">{auth.user?.name}</span>
+              </div>
+              <h2 className="text-4xl font-black text-white mb-4">{t.battleCenter}</h2>
+              <div className="flex flex-wrap gap-4">
+                <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex-1 min-w-[150px]"><span className="text-xs text-slate-500 uppercase font-bold block">{t.marchSize}</span><span className="text-amber-500 font-mono text-xl">{profile.marchSize.toLocaleString()}</span></div>
+                <div className="bg-slate-900 p-4 rounded-xl border border-slate-800 flex-1 min-w-[150px]"><span className="text-xs text-slate-500 uppercase font-bold block">{t.embassyCap}</span><span className="text-amber-500 font-mono text-xl">{profile.embassyCapacity.toLocaleString()}</span></div>
               </div>
             </div>
             <ReportAnalyzer profile={profile} lang={lang} />
