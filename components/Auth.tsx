@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Mail, Lock, User, ArrowRight, CheckCircle2, MessageSquare } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, User, ArrowRight, AlertCircle, MessageSquare, LogIn } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 
 interface AuthProps {
@@ -16,6 +16,8 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const currentOrigin = window.location.origin.replace(/\/$/, "");
 
   const handleAuthAction = async (provider: 'discord' | 'email') => {
     setError(null);
@@ -39,7 +41,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             password,
             options: { 
               data: { display_name: name }, 
-              emailRedirectTo: window.location.origin 
+              emailRedirectTo: currentOrigin
             }
           });
           if (signUpError) throw signUpError;
@@ -47,21 +49,27 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           if (data.user && data.session) {
             onLogin(data.user);
           } else {
-            setSuccessMsg("Verification signal transmitted! Check your email (and SPAM folder) to activate your command link. It may take 1-2 minutes to arrive.");
+            setSuccessMsg("Signal transmitted! Check your email to verify your account.");
           }
         }
       } else {
         const { error: oauthError } = await supabase.auth.signInWithOAuth({
           provider,
           options: { 
-            redirectTo: window.location.origin
+            redirectTo: currentOrigin,
+            skipBrowserRedirect: false
           }
         });
+        
         if (oauthError) throw oauthError;
       }
     } catch (err: any) {
       console.error('Auth failure:', err);
-      setError(err.message || "A tactical failure occurred. Verify your uplink.");
+      if (err.message?.toLowerCase().includes('path is invalid') || err.message?.toLowerCase().includes('redirect_uri')) {
+        setError(`RED ALERT: Redirect Blocked. Your domain "${currentOrigin}" is not in the Supabase Whitelist.`);
+      } else {
+        setError(err.message || "A tactical failure occurred. Verify your uplink.");
+      }
     } finally {
       setLoading(false);
     }
@@ -72,7 +80,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       <div className="absolute -top-[10%] -left-[10%] w-[60%] h-[60%] bg-indigo-600/10 blur-[120px] rounded-full"></div>
       <div className="absolute -bottom-[10%] -right-[10%] w-[60%] h-[60%] bg-amber-500/5 blur-[120px] rounded-full"></div>
       
-      <div className="w-full max-w-md bg-slate-900/40 backdrop-blur-2xl rounded-[3rem] border border-slate-800/50 p-8 sm:p-10 shadow-2xl relative z-10">
+      <div className="w-full max-w-md bg-slate-900/40 backdrop-blur-2xl rounded-[3rem] border border-slate-800/50 p-8 sm:p-10 shadow-2xl relative z-10 my-10">
         <div className="flex flex-col items-center mb-8 text-center">
           <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-amber-500/20 transform hover:scale-110 rotate-3 transition-transform">
             <ShieldCheck size={36} className="text-slate-950" />
@@ -84,8 +92,11 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold text-center animate-pulse">
-            {error}
+          <div className="mb-6 space-y-3">
+            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold text-center flex flex-col items-center gap-2">
+              <AlertCircle size={16} />
+              <span>{error}</span>
+            </div>
           </div>
         )}
 
@@ -99,104 +110,99 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           <div className="space-y-3">
             {!isLogin && (
               <div className="relative group">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 group-focus-within:text-amber-500 transition-colors" size={18} />
-                <input 
-                  type="text" 
-                  className="w-full bg-slate-950/50 border border-slate-800 rounded-2xl pl-12 pr-4 py-3.5 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-slate-700 text-sm"
-                  placeholder="Commander Name"
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <input
+                  type="text"
+                  placeholder="COMMANDER NAME"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700 text-sm font-bold"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
               </div>
             )}
             
-            <div className="relative group">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 group-focus-within:text-amber-500 transition-colors" size={18} />
-              <input 
-                type="email" 
-                className="w-full bg-slate-950/50 border border-slate-800 rounded-2xl pl-12 pr-4 py-3.5 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-slate-700 text-sm"
-                placeholder="Intelligence Email"
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <input
+                type="email"
+                placeholder="SECURE EMAIL"
+                className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700 text-sm font-bold"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
 
-            <div className="relative group">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 group-focus-within:text-amber-500 transition-colors" size={18} />
-              <input 
-                type="password" 
-                className="w-full bg-slate-950/50 border border-slate-800 rounded-2xl pl-12 pr-4 py-3.5 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-slate-700 text-sm"
-                placeholder="Tactical Secret"
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+              <input
+                type="password"
+                placeholder="ACCESS KEY"
+                className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700 text-sm font-bold"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
 
             {!isLogin && (
-              <>
-                <div className="relative group">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600 group-focus-within:text-amber-500 transition-colors" size={18} />
-                  <input 
-                    type="password" 
-                    className="w-full bg-slate-950/50 border border-slate-800 rounded-2xl pl-12 pr-4 py-3.5 text-white focus:ring-2 focus:ring-amber-500/50 outline-none transition-all placeholder:text-slate-700 text-sm"
-                    placeholder="Confirm Secret"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                  />
-                </div>
-                <div className="flex items-start gap-3 px-1 py-1">
-                  <button 
-                    type="button"
-                    onClick={() => setAcceptTerms(!acceptTerms)}
-                    className={`mt-1 w-5 h-5 rounded-lg border transition-all flex items-center justify-center flex-shrink-0 ${acceptTerms ? 'bg-amber-500 border-amber-500 shadow-md shadow-amber-500/20' : 'bg-slate-950 border-slate-700 hover:border-slate-500'}`}
-                  >
-                    {acceptTerms && <CheckCircle2 size={14} className="text-slate-950" />}
-                  </button>
-                  <label className="text-[10px] text-slate-500 font-bold cursor-pointer leading-tight select-none pt-0.5" onClick={() => setAcceptTerms(!acceptTerms)}>
-                    I accept the Battle Protocols and Privacy Agreement.
-                  </label>
-                </div>
-              </>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                <input
+                  type="password"
+                  placeholder="CONFIRM ACCESS KEY"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700 text-sm font-bold"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </div>
             )}
 
-            <button 
-              onClick={() => handleAuthAction('email')}
-              disabled={loading}
-              className="w-full bg-amber-500 hover:bg-amber-400 disabled:bg-slate-800 disabled:text-slate-600 text-slate-950 font-black py-4 rounded-2xl transition-all shadow-xl shadow-amber-500/10 flex items-center justify-center gap-2 group mt-2"
-            >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-slate-950/20 border-t-slate-950 rounded-full animate-spin"></div>
-              ) : (
-                <>
-                  <span className="tracking-widest uppercase text-xs">{isLogin ? 'SYNC PORTAL' : 'ENLIST NOW'}</span>
-                  <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
-                </>
-              )}
-            </button>
+            {!isLogin && (
+              <div className="flex items-center gap-3 px-2">
+                <input
+                  type="checkbox"
+                  id="terms"
+                  className="w-4 h-4 rounded border-slate-800 bg-slate-950 text-amber-500 focus:ring-amber-500/50"
+                  checked={acceptTerms}
+                  onChange={(e) => setAcceptTerms(e.target.checked)}
+                />
+                <label htmlFor="terms" className="text-[10px] font-bold text-slate-500 uppercase cursor-pointer">
+                  I accept the tactical protocols
+                </label>
+              </div>
+            )}
           </div>
 
-          <div className="relative my-8 text-center">
-            <span className="text-[9px] uppercase font-black tracking-[0.4em] text-slate-600 bg-[#0f172a] px-4 relative z-10">SECURE UPLINK</span>
-            <div className="absolute top-1/2 w-full h-[1px] bg-slate-800/30"></div>
+          <button
+            onClick={() => handleAuthAction('email')}
+            disabled={loading}
+            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl shadow-xl shadow-amber-500/10 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+          >
+            {loading ? <ShieldCheck className="animate-spin" /> : (isLogin ? <LogIn size={18} /> : <ArrowRight size={18} />)}
+            {isLogin ? 'AUTHORIZE UPLINK' : 'REGISTER STRATEGIST'}
+          </button>
+
+          <div className="relative py-4">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800"></div></div>
+            <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest">
+              <span className="bg-slate-900/40 px-4 text-slate-600">Secure OAuth</span>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3">
-            <button 
-              onClick={() => handleAuthAction('discord')} 
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-3 bg-[#5865F2] hover:bg-[#4752c4] py-3.5 rounded-2xl transition-all shadow-lg active:scale-95 text-white font-black text-xs uppercase tracking-widest border-b-4 border-[#3e48ae]"
-            >
-              <MessageSquare size={18} fill="currentColor" />
-              Sign in with Discord
-            </button>
-          </div>
+          <button
+            onClick={() => handleAuthAction('discord')}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-3 bg-[#5865F2] hover:bg-[#4752c4] py-4 rounded-2xl transition-all shadow-lg active:scale-95 text-white font-black text-xs uppercase tracking-widest border-b-4 border-[#3e48ae]"
+          >
+            <MessageSquare size={18} fill="currentColor" />
+            Sign in with Discord
+          </button>
 
-          <div className="pt-8 text-center border-t border-slate-800/50 mt-6">
-            <button 
-              onClick={() => { setIsLogin(!isLogin); setError(null); setSuccessMsg(null); }} 
-              className="text-[10px] text-slate-500 hover:text-amber-500 font-black transition-colors underline underline-offset-8 decoration-slate-800 hover:decoration-amber-500/30 uppercase tracking-widest block w-full"
+          <div className="pt-6 text-center">
+            <button
+              onClick={() => setIsLogin(!isLogin)}
+              className="text-[10px] font-black text-amber-500 uppercase tracking-widest hover:text-amber-400 transition-colors"
             >
-              {isLogin ? "NEW STRATEGIST? ENLIST HERE" : "EXISTING INTEL? RETURN TO PORTAL"}
+              {isLogin ? "Need a Strategist ID? Register" : "Have credentials? Return to login"}
             </button>
           </div>
         </div>
