@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Mail, Lock, User, ArrowRight, AlertCircle, MessageSquare, LogIn, Copy, Check } from 'lucide-react';
+import { 
+  ShieldCheck, Mail, Lock, User, ArrowRight, AlertCircle, 
+  LogIn, ServerOff
+} from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 
 interface AuthProps {
@@ -16,68 +19,50 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
-  // This URL must match exactly what is in your Supabase 'Site URL' and Discord 'Redirects'
   const cleanRedirectUrl = window.location.origin.replace(/\/$/, "");
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(cleanRedirectUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  // Detect if Supabase configuration is present
+  const isSupabaseConfigured = !supabase.auth.getSession ? false : !window.location.origin.includes('missing-url');
 
-  const handleAuthAction = async (provider: 'discord' | 'email') => {
+  const handleAuthAction = async () => {
     setError(null);
     setSuccessMsg(null);
     setLoading(true);
 
     try {
-      if (provider === 'email') {
-        if (!email || !password) throw new Error("Tactical credentials required.");
-        
-        if (isLogin) {
-          const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-          if (signInError) throw signInError;
-          if (data.user) onLogin(data.user);
-        } else {
-          if (password !== confirmPassword) throw new Error("Security keys do not match.");
-          if (!acceptTerms) throw new Error("You must accept the tactical protocols.");
-          
-          const { data, error: signUpError } = await supabase.auth.signUp({
-            email,
-            password,
-            options: { 
-              data: { display_name: name }, 
-              emailRedirectTo: cleanRedirectUrl
-            }
-          });
-          if (signUpError) throw signUpError;
-          
-          if (data.user && data.session) {
-            onLogin(data.user);
-          } else {
-            setSuccessMsg("Signal transmitted! Check your email to verify your account.");
-          }
-        }
+      if (!email || !password) throw new Error("Tactical credentials required.");
+      
+      if (isLogin) {
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        if (signInError) throw signInError;
+        if (data.user) onLogin(data.user);
       } else {
-        // OAuth logic
-        const { error: oauthError } = await supabase.auth.signInWithOAuth({
-          provider,
+        if (password !== confirmPassword) throw new Error("Security keys do not match.");
+        if (!acceptTerms) throw new Error("You must accept the tactical protocols.");
+        
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
           options: { 
-            redirectTo: cleanRedirectUrl,
-            skipBrowserRedirect: false
+            data: { display_name: name }, 
+            emailRedirectTo: cleanRedirectUrl
           }
         });
+        if (signUpError) throw signUpError;
         
-        if (oauthError) throw oauthError;
+        if (data.user && data.session) {
+          onLogin(data.user);
+        } else {
+          setSuccessMsg("Signal transmitted! Check your email to verify your account.");
+        }
       }
     } catch (err: any) {
       console.error('Auth failure:', err);
-      if (err.message?.toLowerCase().includes('path is invalid') || err.message?.toLowerCase().includes('redirect_uri')) {
-        setError(`OAUTH ERROR: Redirect URI mismatch. Make sure the link below is whitelisted in Supabase (Site URL) and Discord (Redirects).`);
+      if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+        setError("UPLINK FAILURE: Could not connect to the auth server. Check environment variables.");
       } else {
-        setError(err.message || "A tactical failure occurred. Verify your uplink.");
+        setError(err.message || "A tactical failure occurred. Verify your credentials.");
       }
     } finally {
       setLoading(false);
@@ -85,13 +70,13 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6 relative overflow-hidden text-slate-100">
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6 relative overflow-hidden text-slate-100 font-sans">
       <div className="absolute -top-[10%] -left-[10%] w-[60%] h-[60%] bg-indigo-600/10 blur-[120px] rounded-full"></div>
       <div className="absolute -bottom-[10%] -right-[10%] w-[60%] h-[60%] bg-amber-500/5 blur-[120px] rounded-full"></div>
       
-      <div className="w-full max-w-md bg-slate-900/40 backdrop-blur-2xl rounded-[3rem] border border-slate-800/50 p-8 sm:p-10 shadow-2xl relative z-10 my-10">
+      <div className="w-full max-w-md bg-slate-900/40 backdrop-blur-2xl rounded-[3rem] border border-slate-800/50 p-8 sm:p-10 shadow-2xl relative z-10 my-10 border-t-amber-500/20">
         <div className="flex flex-col items-center mb-8 text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-amber-500/20 transform hover:scale-110 rotate-3 transition-transform">
+          <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-amber-500/20 transform hover:scale-110 rotate-3 transition-transform cursor-pointer">
             <ShieldCheck size={36} className="text-slate-950" />
           </div>
           <h1 className="text-3xl font-black text-white tracking-tighter uppercase italic">Evony AI</h1>
@@ -101,17 +86,9 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         </div>
 
         {error && (
-          <div className="mb-6 space-y-3">
-            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold text-center flex flex-col items-center gap-3 leading-relaxed">
-              <AlertCircle size={16} className="flex-shrink-0" />
-              <span>{error}</span>
-              <div className="w-full flex items-center gap-2 bg-slate-950/50 p-2 rounded-lg border border-red-500/10 mt-1">
-                <code className="flex-1 truncate text-left text-[9px]">{cleanRedirectUrl}</code>
-                <button onClick={copyToClipboard} className="p-1 hover:bg-white/10 rounded transition-colors text-white">
-                  {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-                </button>
-              </div>
-            </div>
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold text-center flex flex-col items-center gap-2">
+            <AlertCircle size={16} className="flex-shrink-0" />
+            <span>{error}</span>
           </div>
         )}
 
@@ -124,7 +101,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         <div className="space-y-4">
           <div className="space-y-3">
             {!isLogin && (
-              <div className="relative group">
+              <div className="relative">
                 <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                 <input
                   type="text"
@@ -188,28 +165,12 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           </div>
 
           <button
-            onClick={() => handleAuthAction('email')}
+            onClick={handleAuthAction}
             disabled={loading}
-            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 mt-4"
           >
             {loading ? <ShieldCheck className="animate-spin" /> : (isLogin ? <LogIn size={18} /> : <ArrowRight size={18} />)}
             {isLogin ? 'AUTHORIZE UPLINK' : 'REGISTER STRATEGIST'}
-          </button>
-
-          <div className="relative py-4">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800"></div></div>
-            <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest">
-              <span className="bg-slate-900/40 px-4 text-slate-600">Secure OAuth</span>
-            </div>
-          </div>
-
-          <button
-            onClick={() => handleAuthAction('discord')}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-3 bg-[#5865F2] hover:bg-[#4752c4] py-4 rounded-2xl transition-all shadow-lg active:scale-95 text-white font-black text-xs uppercase tracking-widest border-b-4 border-[#3e48ae]"
-          >
-            <MessageSquare size={18} fill="currentColor" />
-            Sign in with Discord
           </button>
 
           <div className="pt-6 text-center">
@@ -220,6 +181,16 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               {isLogin ? "Need a Strategist ID? Register" : "Have credentials? Return to login"}
             </button>
           </div>
+          
+          {!isSupabaseConfigured && (
+            <div className="mt-8 p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex items-start gap-3">
+              <ServerOff size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
+              <div className="space-y-1">
+                <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Backend Connection Pending</p>
+                <p className="text-[8px] text-slate-400 leading-relaxed uppercase">Supabase environment variables are missing. Authentication is currently offline.</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
