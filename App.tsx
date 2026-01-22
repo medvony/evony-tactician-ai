@@ -20,48 +20,63 @@ const App: React.FC = () => {
   const [inputCode, setInputCode] = useState('');
   const t = translations[lang];
 
-  useEffect(() => {
-    const mapSessionToAuth = (session: any) => {
-      if (!session) return { isAuthenticated: false, user: null };
-      const { user } = session;
-      const metadata = user?.user_metadata || {};
-      return {
-        isAuthenticated: true,
-        user: {
-          email: user?.email,
-          name: metadata?.full_name || metadata?.display_name || metadata?.name || user?.email || 'Commander',
-          avatar: metadata?.avatar_url || metadata?.picture,
-          provider: (session?.app_metadata?.provider || 'email') as any
-        }
-      };
+  const mapSessionToAuth = (session: any) => {
+    if (!session) return { isAuthenticated: false, user: null };
+    const { user } = session;
+    const metadata = user?.user_metadata || {};
+    return {
+      isAuthenticated: true,
+      user: {
+        email: user?.email,
+        name: metadata?.full_name || metadata?.display_name || metadata?.name || user?.email || 'Commander',
+        avatar: metadata?.avatar_url || metadata?.picture,
+        provider: (session?.app_metadata?.provider || 'email') as any
+      }
     };
+  };
 
-    const handleSessionState = (session: any) => {
-      const hasHash = window.location.hash.includes('access_token') || window.location.hash.includes('error');
-      
-      if (session) {
-        setAuth(mapSessionToAuth(session));
-        if (window.location.hash) {
-          window.history.replaceState(null, '', window.location.pathname);
+  useEffect(() => {
+    // 1. Initial Check: See if we already have a local session
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          setAuth(mapSessionToAuth(session));
+          // Clean hash from URL if present after successful session grab
+          if (window.location.hash) {
+            window.history.replaceState(null, '', window.location.pathname);
+          }
         }
-        setIsAuthLoading(false);
-      } else {
-        if (!hasHash) {
-          setAuth({ isAuthenticated: false, user: null });
+      } catch (err) {
+        console.error("Auth init failure:", err);
+      } finally {
+        // Only stop loading if we're not waiting for a hash-based redirect (Discord/Email Link)
+        // This is critical to prevent the app from appearing "stuck" on the login screen 
+        // while Supabase is processing the redirect tokens in the background.
+        if (!window.location.hash.includes('access_token')) {
           setIsAuthLoading(false);
         }
       }
     };
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      handleSessionState(session);
-    });
+    initAuth();
 
+    // 2. Event Listener: Handle redirect completions and sign-ins
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
-        handleSessionState(session);
+      console.debug("Tactical Auth Event:", event);
+      
+      if (session) {
+        setAuth(mapSessionToAuth(session));
+        // Clear tokens from the URL for security and aesthetics
+        if (window.location.hash) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+        setIsAuthLoading(false);
       } else if (event === 'SIGNED_OUT') {
         setAuth({ isAuthenticated: false, user: null });
+        setIsAuthLoading(false);
+      } else if (!window.location.hash.includes('access_token')) {
+        // Stop loading if there's no session and we're not currently processing a redirect hash
         setIsAuthLoading(false);
       }
     });
@@ -159,7 +174,7 @@ const App: React.FC = () => {
               value={lang} 
               onChange={(e) => setLang(e.target.value as Language)}
             >
-              {['EN', 'AR', 'FR', 'JA', 'ES', 'RU', 'ZH'].map(l => <option key={l} value={l}>{l}</option>)}
+              {['EN', 'AR', 'FR', 'JA', 'ES', 'IT', 'RU', 'PT', 'ZH', 'DE'].map(l => <option key={l} value={l}>{l}</option>)}
             </select>
             <button onClick={() => setProfile({...profile, isSetup: false})} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
               <Settings size={20} />
