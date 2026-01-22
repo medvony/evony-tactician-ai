@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ShieldCheck, Mail, Lock, User, ArrowRight, AlertCircle, MessageSquare, LogIn } from 'lucide-react';
+import { ShieldCheck, Mail, Lock, User, ArrowRight, AlertCircle, MessageSquare, LogIn, Copy, Check } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 
 interface AuthProps {
@@ -16,8 +16,16 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const currentOrigin = window.location.origin.replace(/\/$/, "");
+  // This URL must match exactly what is in your Supabase 'Site URL' and Discord 'Redirects'
+  const cleanRedirectUrl = window.location.origin.replace(/\/$/, "");
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(cleanRedirectUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleAuthAction = async (provider: 'discord' | 'email') => {
     setError(null);
@@ -41,7 +49,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             password,
             options: { 
               data: { display_name: name }, 
-              emailRedirectTo: currentOrigin
+              emailRedirectTo: cleanRedirectUrl
             }
           });
           if (signUpError) throw signUpError;
@@ -53,10 +61,11 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           }
         }
       } else {
+        // OAuth logic
         const { error: oauthError } = await supabase.auth.signInWithOAuth({
           provider,
           options: { 
-            redirectTo: currentOrigin,
+            redirectTo: cleanRedirectUrl,
             skipBrowserRedirect: false
           }
         });
@@ -66,7 +75,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     } catch (err: any) {
       console.error('Auth failure:', err);
       if (err.message?.toLowerCase().includes('path is invalid') || err.message?.toLowerCase().includes('redirect_uri')) {
-        setError(`RED ALERT: Redirect Blocked. Your domain "${currentOrigin}" is not in the Supabase Whitelist.`);
+        setError(`OAUTH ERROR: Redirect URI mismatch. Make sure the link below is whitelisted in Supabase (Site URL) and Discord (Redirects).`);
       } else {
         setError(err.message || "A tactical failure occurred. Verify your uplink.");
       }
@@ -93,9 +102,15 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
         {error && (
           <div className="mb-6 space-y-3">
-            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold text-center flex flex-col items-center gap-2">
-              <AlertCircle size={16} />
+            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold text-center flex flex-col items-center gap-3 leading-relaxed">
+              <AlertCircle size={16} className="flex-shrink-0" />
               <span>{error}</span>
+              <div className="w-full flex items-center gap-2 bg-slate-950/50 p-2 rounded-lg border border-red-500/10 mt-1">
+                <code className="flex-1 truncate text-left text-[9px]">{cleanRedirectUrl}</code>
+                <button onClick={copyToClipboard} className="p-1 hover:bg-white/10 rounded transition-colors text-white">
+                  {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -175,7 +190,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           <button
             onClick={() => handleAuthAction('email')}
             disabled={loading}
-            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl shadow-xl shadow-amber-500/10 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
           >
             {loading ? <ShieldCheck className="animate-spin" /> : (isLogin ? <LogIn size={18} /> : <ArrowRight size={18} />)}
             {isLogin ? 'AUTHORIZE UPLINK' : 'REGISTER STRATEGIST'}
