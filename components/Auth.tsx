@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   ShieldCheck, Mail, Lock, User, ArrowRight, AlertCircle, 
-  LogIn, ServerOff
+  LogIn, Chrome, Facebook, Loader2
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 
@@ -15,15 +15,29 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
-  const [acceptTerms, setAcceptTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  const cleanRedirectUrl = window.location.origin.replace(/\/$/, "");
+  const cleanRedirectUrl = window.location.origin;
 
-  // Detect if Supabase configuration is present
-  const isSupabaseConfigured = !supabase.auth.getSession ? false : !window.location.origin.includes('missing-url');
+  const handleOAuthLogin = async (provider: 'google' | 'facebook') => {
+    setError(null);
+    setLoading(true);
+    try {
+      const { error: authError } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: { 
+          redirectTo: cleanRedirectUrl,
+          queryParams: { access_type: 'offline', prompt: 'consent' }
+        }
+      });
+      if (authError) throw authError;
+    } catch (err: any) {
+      setError(err.message || "Tactical link failure (OAuth).");
+      setLoading(false);
+    }
+  };
 
   const handleAuthAction = async () => {
     setError(null);
@@ -31,15 +45,14 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     setLoading(true);
 
     try {
-      if (!email || !password) throw new Error("Tactical credentials required.");
+      if (!email || !password) throw new Error("Security credentials required.");
       
       if (isLogin) {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
         if (data.user) onLogin(data.user);
       } else {
-        if (password !== confirmPassword) throw new Error("Security keys do not match.");
-        if (!acceptTerms) throw new Error("You must accept the tactical protocols.");
+        if (!isLogin && password !== confirmPassword) throw new Error("Verification keys do not match.");
         
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
@@ -54,16 +67,11 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         if (data.user && data.session) {
           onLogin(data.user);
         } else {
-          setSuccessMsg("Signal transmitted! Check your email to verify your account.");
+          setSuccessMsg("Signal sent. Check your secure inbox to verify your account.");
         }
       }
     } catch (err: any) {
-      console.error('Auth failure:', err);
-      if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
-        setError("UPLINK FAILURE: Could not connect to the auth server. Check environment variables.");
-      } else {
-        setError(err.message || "A tactical failure occurred. Verify your credentials.");
-      }
+      setError(err.message || "Tactical deployment failed.");
     } finally {
       setLoading(false);
     }
@@ -71,106 +79,114 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6 relative overflow-hidden text-slate-100 font-sans">
-      <div className="absolute -top-[10%] -left-[10%] w-[60%] h-[60%] bg-indigo-600/10 blur-[120px] rounded-full"></div>
-      <div className="absolute -bottom-[10%] -right-[10%] w-[60%] h-[60%] bg-amber-500/5 blur-[120px] rounded-full"></div>
+      {/* Aesthetic Background Overlays */}
+      <div className="absolute -top-[10%] -left-[10%] w-[70%] h-[70%] bg-indigo-600/10 blur-[150px] rounded-full animate-pulse"></div>
+      <div className="absolute -bottom-[10%] -right-[10%] w-[70%] h-[70%] bg-amber-500/5 blur-[150px] rounded-full"></div>
       
-      <div className="w-full max-w-md bg-slate-900/40 backdrop-blur-2xl rounded-[3rem] border border-slate-800/50 p-8 sm:p-10 shadow-2xl relative z-10 my-10 border-t-amber-500/20">
-        <div className="flex flex-col items-center mb-8 text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-amber-500/20 transform hover:scale-110 rotate-3 transition-transform cursor-pointer">
+      <div className="w-full max-w-md bg-slate-900/60 backdrop-blur-3xl rounded-[3rem] border border-slate-800/50 p-8 sm:p-10 shadow-2xl relative z-10 border-t-amber-500/20 my-10 animate-in fade-in zoom-in-95 duration-500">
+        <div className="flex flex-col items-center mb-10 text-center">
+          <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-amber-500/20 transform hover:scale-110 transition-transform cursor-pointer">
             <ShieldCheck size={36} className="text-slate-950" />
           </div>
-          <h1 className="text-3xl font-black text-white tracking-tighter uppercase italic">Evony AI</h1>
-          <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-1">
-            {isLogin ? 'Tactical Entry Portal' : 'Strategist Registration'}
-          </p>
+          <h1 className="text-3xl font-black text-white tracking-tighter uppercase italic leading-none">Evony AI</h1>
+          <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-2">Tactical Command Access</p>
+        </div>
+
+        {/* Social Sign-In Grid */}
+        <div className="grid grid-cols-2 gap-3 mb-8">
+          <button 
+            onClick={() => handleOAuthLogin('google')}
+            disabled={loading}
+            className="flex items-center justify-center gap-2 py-4 px-4 bg-slate-950/50 border border-slate-800 rounded-2xl hover:bg-slate-900 transition-all font-bold text-xs disabled:opacity-50 active:scale-95 group"
+          >
+            <Chrome size={18} className="text-red-400 group-hover:scale-110 transition-transform" />
+            Google
+          </button>
+          <button 
+            onClick={() => handleOAuthLogin('facebook')}
+            disabled={loading}
+            className="flex items-center justify-center gap-2 py-4 px-4 bg-slate-950/50 border border-slate-800 rounded-2xl hover:bg-slate-900 transition-all font-bold text-xs disabled:opacity-50 active:scale-95 group"
+          >
+            <Facebook size={18} className="text-blue-500 group-hover:scale-110 transition-transform" />
+            Facebook
+          </button>
+        </div>
+
+        <div className="relative mb-8">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800/50"></div></div>
+          <div className="relative flex justify-center text-[10px] uppercase font-black">
+            <span className="bg-[#141b2e] px-4 text-slate-500 tracking-widest">Or Secure Email</span>
+          </div>
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold text-center flex flex-col items-center gap-2">
-            <AlertCircle size={16} className="flex-shrink-0" />
-            <span>{error}</span>
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-[10px] font-bold text-center flex items-center justify-center gap-2 animate-in fade-in zoom-in-95">
+            <AlertCircle size={16} /> <span>{error}</span>
           </div>
         )}
 
         {successMsg && (
-          <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-[10px] font-bold text-center">
+          <div className="mb-6 p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-[10px] font-bold text-center animate-in fade-in zoom-in-95">
             {successMsg}
           </div>
         )}
 
         <div className="space-y-4">
-          <div className="space-y-3">
-            {!isLogin && (
-              <div className="relative">
-                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                <input
-                  type="text"
-                  placeholder="COMMANDER NAME"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700 text-sm font-bold"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-            )}
-            
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+          {!isLogin && (
+            <div className="relative group">
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-amber-500 transition-colors" size={18} />
               <input
-                type="email"
-                placeholder="SECURE EMAIL"
-                className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700 text-sm font-bold"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                placeholder="COMMANDER NAME"
+                className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700 text-sm font-bold uppercase"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
               />
             </div>
+          )}
+          
+          <div className="relative group">
+            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-amber-500 transition-colors" size={18} />
+            <input
+              type="email"
+              placeholder="STRATEGIST EMAIL"
+              className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700 text-sm font-bold"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
 
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+          <div className="relative group">
+            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-amber-500 transition-colors" size={18} />
+            <input
+              type="password"
+              placeholder="ACCESS KEY"
+              className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700 text-sm font-bold"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+
+          {!isLogin && (
+            <div className="relative group">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-amber-500 transition-colors" size={18} />
               <input
                 type="password"
-                placeholder="ACCESS KEY"
+                placeholder="CONFIRM KEY"
                 className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700 text-sm font-bold"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
               />
             </div>
-
-            {!isLogin && (
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                <input
-                  type="password"
-                  placeholder="CONFIRM ACCESS KEY"
-                  className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-12 pr-4 text-white outline-none focus:ring-2 focus:ring-amber-500/50 transition-all placeholder:text-slate-700 text-sm font-bold"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                />
-              </div>
-            )}
-
-            {!isLogin && (
-              <div className="flex items-center gap-3 px-2">
-                <input
-                  type="checkbox"
-                  id="terms"
-                  className="w-4 h-4 rounded border-slate-800 bg-slate-950 text-amber-500 focus:ring-amber-500/50"
-                  checked={acceptTerms}
-                  onChange={(e) => setAcceptTerms(e.target.checked)}
-                />
-                <label htmlFor="terms" className="text-[10px] font-bold text-slate-500 uppercase cursor-pointer">
-                  I accept the tactical protocols
-                </label>
-              </div>
-            )}
-          </div>
+          )}
 
           <button
             onClick={handleAuthAction}
             disabled={loading}
-            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-4 rounded-2xl shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50 mt-4"
+            className="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-5 rounded-2xl shadow-xl shadow-amber-500/20 flex items-center justify-center gap-2 transition-all active:scale-[0.98] mt-4 disabled:opacity-50"
           >
-            {loading ? <ShieldCheck className="animate-spin" /> : (isLogin ? <LogIn size={18} /> : <ArrowRight size={18} />)}
-            {isLogin ? 'AUTHORIZE UPLINK' : 'REGISTER STRATEGIST'}
+            {loading ? <Loader2 className="animate-spin" size={20} /> : (isLogin ? <LogIn size={20} /> : <ArrowRight size={20} />)}
+            {isLogin ? 'AUTHORIZE UPLINK' : 'REGISTER COMMANDER'}
           </button>
 
           <div className="pt-6 text-center">
@@ -178,19 +194,9 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               onClick={() => setIsLogin(!isLogin)}
               className="text-[10px] font-black text-amber-500 uppercase tracking-widest hover:text-amber-400 transition-colors"
             >
-              {isLogin ? "Need a Strategist ID? Register" : "Have credentials? Return to login"}
+              {isLogin ? "Request New ID? Sign Up" : "Recall Active ID? Login"}
             </button>
           </div>
-          
-          {!isSupabaseConfigured && (
-            <div className="mt-8 p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl flex items-start gap-3">
-              <ServerOff size={16} className="text-amber-500 mt-0.5 flex-shrink-0" />
-              <div className="space-y-1">
-                <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Backend Connection Pending</p>
-                <p className="text-[8px] text-slate-400 leading-relaxed uppercase">Supabase environment variables are missing. Authentication is currently offline.</p>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
