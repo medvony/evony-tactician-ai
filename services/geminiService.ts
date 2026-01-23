@@ -1,18 +1,12 @@
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
-import { UserProfile, AnalysisResponse } from "../types";
+import { UserProfile, AnalysisResponse, ChatMessage } from "../types";
 import { SYSTEM_PROMPT } from "../constants";
 
 export const analyzeReports = async (
   images: string[], 
   profile: UserProfile
 ): Promise<AnalysisResponse> => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    throw new Error("Gemini API Key is missing. Please set API_KEY in your environment variables.");
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
-  const model = 'gemini-3-pro-preview';
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const imageParts = images.map(img => {
     const [header, data] = img.split(',');
@@ -42,8 +36,8 @@ export const analyzeReports = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model,
+    const response: GenerateContentResponse = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
       contents: { parts: [...imageParts, { text: prompt }] },
       config: {
         systemInstruction: SYSTEM_PROMPT,
@@ -53,12 +47,18 @@ export const analyzeReports = async (
 
     const text = response.text || "";
     
+    // Extract search grounding sources if available
     const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks
-      ?.map((chunk: any) => ({
-        title: chunk.web?.title || "Tactical Reference",
-        uri: chunk.web?.uri || "#"
-      }))
-      .filter((s: any) => s.uri !== "#") || [];
+      ?.map((chunk: any) => {
+        if (chunk.web) {
+          return {
+            title: chunk.web.title || "Tactical Source",
+            uri: chunk.web.uri || "#"
+          };
+        }
+        return null;
+      })
+      .filter((s: any) => s !== null && s.uri !== "#") || [];
 
     const extractSection = (header: string) => {
       const regex = new RegExp(`${header}[\\s\\S]*?(?=###|$)`, 'i');
@@ -72,44 +72,34 @@ export const analyzeReports = async (
     const tactical = extractSection("### TACTICAL_SUMMARY");
     const dataExt = extractSection("### DATA_EXTRACTION");
 
-    if (!enemyIntel && !march && !text) {
-      throw new Error("The AI failed to generate a structured response. Please try again.");
-    }
-
     return {
       reportType: text.toLowerCase().includes('monster') ? 'Monster' : 'Attack',
-      summary: enemyIntel || tactical ? `**Enemy Intel:**\n${enemyIntel || 'No intel detected.'}\n\n**Tactical Logic:**\n${tactical || 'Standard strategy applied.'}` : "Summary unavailable.",
+      summary: (enemyIntel || tactical) ? `**Enemy Intel:**\n${enemyIntel || 'No intel detected.'}\n\n**Tactical Logic:**\n${tactical || 'Standard strategy applied.'}` : "Summary unavailable.",
       recommendations: march || "Tactical configuration failed to generate.",
       anonymizedData: dataExt,
       sources
     };
   } catch (err: any) {
-    if (err.message?.includes('Failed to fetch')) {
-      throw new Error("Uplink Error: Failed to fetch data from Gemini AI. Check your API_KEY and internet connection.");
-    }
-    throw err;
+    console.error("Gemini Error:", err);
+    throw new Error(err.message || "Uplink Error: Failed to fetch data from Gemini AI.");
   }
 };
 
 export async function* chatWithAIStream(
-  history: { role: 'user' | 'model', text: string }[],
+  history: ChatMessage[],
   message: string,
   profile: UserProfile,
   currentAnalysis: AnalysisResponse | null,
   attachments: string[] = []
 ) {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key Missing");
-
-  const ai = new GoogleGenAI({ apiKey });
-  const model = 'gemini-3-pro-preview'; 
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const analysisContext = currentAnalysis 
     ? `CONTEXT: Report ${currentAnalysis.reportType}, Data: ${currentAnalysis.anonymizedData}`
     : "";
 
   const chat = ai.chats.create({
-    model,
+    model: 'gemini-3-pro-preview',
     config: {
       systemInstruction: SYSTEM_PROMPT + `\n\nUSER PROFILE: ${JSON.stringify(profile)}\n\n${analysisContext}`,
       tools: [{ googleSearch: {} }]
@@ -124,8 +114,9 @@ export async function* chatWithAIStream(
     };
   });
 
+  // The 'message' parameter can take an array of parts for multimodal chat
   const stream = await chat.sendMessageStream({ 
-    message: [{ text: message }, ...imageParts]
+    message: [{ text: message }, ...imageParts] as any
   });
 
   for await (const chunk of stream) {
