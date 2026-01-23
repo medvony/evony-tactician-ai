@@ -47,9 +47,10 @@ export const analyzeReports = async (
 
     const text = response.text || "";
     
-    // Fixed TypeScript Type Casting for grounding sources
+    // Explicitly typed source extraction to prevent build errors
     const sources: { title: string; uri: string }[] = [];
-    const rawChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+    const groundingMetadata = response.candidates?.[0]?.groundingMetadata;
+    const rawChunks = groundingMetadata?.groundingChunks;
     
     if (rawChunks && Array.isArray(rawChunks)) {
       rawChunks.forEach((chunk: any) => {
@@ -82,7 +83,9 @@ export const analyzeReports = async (
       sources
     };
   } catch (err: any) {
-    console.error("Gemini Error:", err);
+    if (err.message?.includes('429')) {
+      throw new Error("Tactical Overload: Quota exceeded. Please wait 60 seconds and try again.");
+    }
     throw new Error(err.message || "Uplink Error: Failed to fetch data from Gemini AI.");
   }
 };
@@ -95,7 +98,6 @@ export async function* chatWithAIStream(
   attachments: string[] = []
 ) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
   const analysisContext = currentAnalysis 
     ? `CONTEXT: Report ${currentAnalysis.reportType}, Data: ${currentAnalysis.anonymizedData}`
     : "";
@@ -108,20 +110,12 @@ export async function* chatWithAIStream(
     }
   });
 
-  const imageParts = attachments.map(img => {
-    const [header, data] = img.split(',');
-    const mimeType = header.match(/:(.*?);/)?.[1] || "image/jpeg";
-    return {
-      inlineData: { mimeType, data }
-    };
-  });
-
   const stream = await chat.sendMessageStream({ 
-    message: [{ text: message }, ...imageParts] as any
+    message: message // Simplified message structure for stability
   });
 
   for await (const chunk of stream) {
     const c = chunk as GenerateContentResponse;
     yield c.text || "";
   }
-      }
+}
