@@ -47,9 +47,9 @@ export const analyzeReports = async (
 
     const text = response.text || "";
     
-    // Extract search grounding sources if available
-    const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks
-      ?.map((chunk: any) => {
+    const rawChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const sources = rawChunks
+      .map((chunk: any) => {
         if (chunk.web) {
           return {
             title: chunk.web.title || "Tactical Source",
@@ -58,7 +58,7 @@ export const analyzeReports = async (
         }
         return null;
       })
-      .filter((s: any) => s !== null && s.uri !== "#") || [];
+      .filter((s): s is { title: string; uri: string } => s !== null && s.uri !== "#");
 
     const extractSection = (header: string) => {
       const regex = new RegExp(`${header}[\\s\\S]*?(?=###|$)`, 'i');
@@ -114,7 +114,6 @@ export async function* chatWithAIStream(
     };
   });
 
-  // The 'message' parameter can take an array of parts for multimodal chat
   const stream = await chat.sendMessageStream({ 
     message: [{ text: message }, ...imageParts] as any
   });
