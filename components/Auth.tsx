@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   ShieldCheck, Mail, Lock, User, ArrowRight, AlertCircle, 
-  LogIn, Chrome, Facebook, Loader2
+  LogIn, Loader2
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 
@@ -20,24 +20,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const cleanRedirectUrl = window.location.origin;
-
-  const handleOAuthLogin = async (provider: 'google' | 'facebook') => {
-    setError(null);
-    setLoading(true);
-    try {
-      const { error: authError } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: { 
-          redirectTo: cleanRedirectUrl,
-          queryParams: { access_type: 'offline', prompt: 'consent' }
-        }
-      });
-      if (authError) throw authError;
-    } catch (err: any) {
-      setError(err.message || "Tactical link failure (OAuth).");
-      setLoading(false);
-    }
-  };
 
   const handleAuthAction = async () => {
     setError(null);
@@ -79,7 +61,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-950 p-6 relative overflow-hidden text-slate-100 font-sans">
-      {/* Aesthetic Background Overlays */}
       <div className="absolute -top-[10%] -left-[10%] w-[70%] h-[70%] bg-indigo-600/10 blur-[150px] rounded-full animate-pulse"></div>
       <div className="absolute -bottom-[10%] -right-[10%] w-[70%] h-[70%] bg-amber-500/5 blur-[150px] rounded-full"></div>
       
@@ -90,33 +71,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           </div>
           <h1 className="text-3xl font-black text-white tracking-tighter uppercase italic leading-none">Evony AI</h1>
           <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mt-2">Tactical Command Access</p>
-        </div>
-
-        {/* Social Sign-In Grid */}
-        <div className="grid grid-cols-2 gap-3 mb-8">
-          <button 
-            onClick={() => handleOAuthLogin('google')}
-            disabled={loading}
-            className="flex items-center justify-center gap-2 py-4 px-4 bg-slate-950/50 border border-slate-800 rounded-2xl hover:bg-slate-900 transition-all font-bold text-xs disabled:opacity-50 active:scale-95 group"
-          >
-            <Chrome size={18} className="text-red-400 group-hover:scale-110 transition-transform" />
-            Google
-          </button>
-          <button 
-            onClick={() => handleOAuthLogin('facebook')}
-            disabled={loading}
-            className="flex items-center justify-center gap-2 py-4 px-4 bg-slate-950/50 border border-slate-800 rounded-2xl hover:bg-slate-900 transition-all font-bold text-xs disabled:opacity-50 active:scale-95 group"
-          >
-            <Facebook size={18} className="text-blue-500 group-hover:scale-110 transition-transform" />
-            Facebook
-          </button>
-        </div>
-
-        <div className="relative mb-8">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-800/50"></div></div>
-          <div className="relative flex justify-center text-[10px] uppercase font-black">
-            <span className="bg-[#141b2e] px-4 text-slate-500 tracking-widest">Or Secure Email</span>
-          </div>
         </div>
 
         {error && (
