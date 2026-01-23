@@ -1,5 +1,4 @@
 export type TroopType = 'Ground' | 'Ranged' | 'Mounted' | 'Siege';
-
 export type Language = 'EN' | 'AR' | 'FR' | 'JA' | 'ES' | 'IT' | 'RU' | 'PT' | 'ZH' | 'DE';
 
 export interface UserProfile {
