@@ -15,7 +15,7 @@ export interface AuthState {
     email?: string;
     name?: string;
     avatar?: string;
-    provider?: 'email';
+    provider?: 'email' | 'google' | 'facebook';
   } | null;
 }
 
