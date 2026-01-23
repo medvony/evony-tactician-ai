@@ -9,56 +9,39 @@ import { LogOut, Settings, BarChart3, ShieldAlert, Loader2 } from 'lucide-react'
 import { supabase } from './services/supabaseClient';
 
 const App: React.FC = () => {
-  // 1. State for Language and UI Translations
   const [lang, setLang] = useState<Language>(() => (localStorage.getItem('evony_lang') as Language) || 'EN');
-  const t = translations[lang];
-
-  // 2. State for Authentication
   const [auth, setAuth] = useState<AuthState>({ isAuthenticated: false, user: null });
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-
-  // 3. State for User Military Profile
   const [profile, setProfile] = useState<UserProfile>(() => {
     const saved = localStorage.getItem('evony_profile');
-    return saved ? JSON.parse(saved) : { 
-      highestTiers: { Ground: 1, Ranged: 1, Mounted: 1, Siege: 1 }, 
-      marchSize: 0, 
-      embassyCapacity: 0, 
-      isSetup: false 
-    };
+    return saved ? JSON.parse(saved) : { highestTiers: { Ground: 1, Ranged: 1, Mounted: 1, Siege: 1 }, marchSize: 0, embassyCapacity: 0, isSetup: false };
   });
   
-  // 4. State for the "Persistent Access Token" layer
   const [accessGranted, setAccessGranted] = useState(() => localStorage.getItem('evony_access') === 'true');
   const [inputCode, setInputCode] = useState('');
+  const t = translations[lang];
 
-  // Mapping Supabase Session to our internal AuthState
-  const mapSessionToAuth = (session: any) => {
+  const mapSessionToAuth = (session: any): AuthState => {
     if (!session) return { isAuthenticated: false, user: null };
     const { user } = session;
     const metadata = user?.user_metadata || {};
+    
     return {
       isAuthenticated: true,
       user: {
         email: user?.email,
         name: metadata?.full_name || metadata?.display_name || user?.email || 'Commander',
         avatar: metadata?.avatar_url || metadata?.picture,
-        provider: 'email'
+        provider: user?.app_metadata?.provider || 'email'
       }
     };
   };
 
-  // Initialize Auth on mount
   useEffect(() => {
     const initAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        setAuth(mapSessionToAuth(session));
-      } catch (err) {
-        console.error("Auth init error:", err);
-      } finally {
-        setIsAuthLoading(false);
-      }
+      const { data: { session } } = await supabase.auth.getSession();
+      setAuth(mapSessionToAuth(session));
+      setIsAuthLoading(false);
     };
     initAuth();
 
@@ -68,12 +51,10 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Persist profile changes
   useEffect(() => { 
     localStorage.setItem('evony_profile', JSON.stringify(profile)); 
   }, [profile]);
   
-  // Update direction (RTL/LTR) based on language
   useEffect(() => { 
     localStorage.setItem('evony_lang', lang);
     if (document.documentElement) {
@@ -95,25 +76,25 @@ const App: React.FC = () => {
     }
   };
 
-  // 1. Loading State
   if (isAuthLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100 font-sans">
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-slate-100">
         <Loader2 className="w-12 h-12 text-amber-500 animate-spin mb-4" />
         <p className="text-[10px] font-black uppercase tracking-[0.3em] text-amber-500">Establishing Secure Uplink</p>
       </div>
     );
   }
 
-  // 2. Authentication Screen (Signup/Login)
   if (!auth.isAuthenticated) {
-    return <Auth onLogin={(user) => setAuth({ isAuthenticated: true, user })} />;
+    return <Auth onLogin={async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setAuth(mapSessionToAuth(session));
+    }} />;
   }
 
-  // 3. Secondary Access Code Screen (The "Persistent Token")
   if (!accessGranted) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden font-sans">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6 relative overflow-hidden">
         <div className="absolute -top-[10%] -left-[10%] w-[60%] h-[60%] bg-amber-500/5 blur-[120px] rounded-full"></div>
         <div className="max-w-md w-full bg-slate-900/60 backdrop-blur-3xl border border-slate-800/50 p-10 rounded-[2.5rem] text-center shadow-2xl relative z-10">
           <div className="w-20 h-20 bg-amber-500/10 border border-amber-500/20 rounded-3xl flex items-center justify-center mx-auto mb-6">
@@ -137,13 +118,12 @@ const App: React.FC = () => {
     );
   }
 
-  // 4. Main Application Dashboard
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 pb-20 font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-100 pb-20">
       <header className="h-20 bg-slate-950/80 backdrop-blur-xl border-b border-slate-900 flex items-center px-6 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto w-full flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <BarChart3 className="text-amber-500" size={24} />
+            <BarChart3 className="text-amber-500" />
             <h1 className="font-black text-xl tracking-tight hidden sm:block italic uppercase">EVONY AI</h1>
           </div>
           <div className="flex gap-2 items-center">
@@ -156,9 +136,7 @@ const App: React.FC = () => {
               value={lang} 
               onChange={(e) => setLang(e.target.value as Language)}
             >
-              {['EN', 'AR', 'FR', 'JA', 'ES', 'IT', 'RU', 'PT', 'ZH', 'DE'].map(l => (
-                <option key={l} value={l}>{l}</option>
-              ))}
+              {['EN', 'AR', 'FR', 'JA', 'ES', 'IT', 'RU', 'PT', 'ZH', 'DE'].map(l => <option key={l} value={l}>{l}</option>)}
             </select>
             <button onClick={() => setProfile({...profile, isSetup: false})} className="p-2 bg-slate-900 border border-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors">
               <Settings size={20} />
@@ -176,9 +154,7 @@ const App: React.FC = () => {
         ) : (
           <>
             <div className="mb-10">
-              <h2 className="text-4xl font-black text-white mb-4 tracking-tighter italic uppercase">
-                {t.battleCenter}
-              </h2>
+              <h2 className="text-4xl font-black text-white mb-4 tracking-tighter italic uppercase">{t.battleCenter}</h2>
               <div className="flex flex-wrap gap-4">
                 <div className="bg-slate-900/50 p-6 rounded-2xl border border-slate-800 flex-1 min-w-[200px] backdrop-blur-sm">
                   <span className="text-[10px] text-slate-500 uppercase font-black tracking-widest block mb-2">{t.marchSize}</span>
