@@ -12,24 +12,16 @@ class SimpleCache {
       const oldestKey = this.cache.keys().next().value;
       this.cache.delete(oldestKey);
     }
-
-    this.cache.set(key, {
-      data: value,
-      timestamp: Date.now(),
-    });
+    this.cache.set(key, { data: value, timestamp: Date.now() });
   }
 
   get(key: string, ttl: number = 24 * 60 * 60 * 1000): any | null {
     const entry = this.cache.get(key);
-    
     if (!entry) return null;
-
-    const age = Date.now() - entry.timestamp;
-    if (age > ttl) {
+    if (Date.now() - entry.timestamp > ttl) {
       this.cache.delete(key);
       return null;
     }
-
     return entry.data;
   }
 
