@@ -28,8 +28,18 @@ export interface AnalysisResponse {
   sources?: Array<{ title: string; uri: string }>;
 }
 
-// Updated to match AI service expectations
+// UPDATED: Backward compatible ChatMessage
 export interface ChatMessage {
-  role: 'user' | 'assistant' | 'model';  // Added 'assistant' for AI responses
-  content: string;  // Changed from 'text' to 'content' for Groq compatibility
+  role: 'user' | 'assistant' | 'model';
+  content: string;
+  // For backward compatibility - existing code can still use .text
+  text?: string;
+}
+
+// Helper function for converting messages
+export function prepareMessageForAI(message: ChatMessage): { role: string; content: string } {
+  return {
+    role: message.role === 'model' ? 'assistant' : message.role,
+    content: message.content || message.text || '' // Uses .content first, falls back to .text
+  };
 }
