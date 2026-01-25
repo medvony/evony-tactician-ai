@@ -1,4 +1,12 @@
-import { createWorker } from 'tesseract.js';
+// IMPORTANT: Remove the import statement at the top
+// DELETE THIS LINE: import { createWorker } from 'tesseract.js';
+
+// Add this type declaration at the top
+declare global {
+  interface Window {
+    Tesseract: any;
+  }
+}
 
 /**
  * Extract text from Evony battle report screenshots
@@ -8,10 +16,18 @@ export async function extractTextFromImage(imageDataUrl: string): Promise<string
   console.log('Starting OCR for battle report...');
   
   try {
+    // Check if Tesseract.js is loaded from CDN
+    if (typeof window === 'undefined' || !window.Tesseract) {
+      throw new Error('Tesseract.js not loaded. Please check if CDN is working.');
+    }
+    
+    // Use the global Tesseract from CDN
+    const { createWorker } = window.Tesseract;
+    
     // Initialize worker with optimized settings for game screenshots
     const worker = await createWorker({
-      logger: (m) => console.log(`OCR: ${m.status}`),
-      errorHandler: (err) => console.error('OCR Error:', err),
+      logger: (m: any) => console.log(`OCR: ${m.status}`),
+      errorHandler: (err: any) => console.error('OCR Error:', err),
     });
     
     await worker.loadLanguage('eng');
