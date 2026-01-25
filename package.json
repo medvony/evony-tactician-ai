@@ -15,7 +15,6 @@
     "@supabase/supabase-js": "^2.48.1",
     "lucide-react": "^0.562.0",
     "react": "^19.0.0",
-    "cheerio": "^1.0.0-rc.12",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
