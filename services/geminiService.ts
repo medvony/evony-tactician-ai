@@ -19,7 +19,6 @@ class DeepSeekService {
   private baseUrl = 'https://api.deepseek.com/v1';
 
   constructor() {
-    // Use process.env just like your OpenAI setup
     this.apiKey = process.env.VITE_DEEPSEEK_API_KEY || "";
     
     if (!this.apiKey) {
@@ -82,16 +81,7 @@ class DeepSeekService {
     query: string,
     scrapedContent?: ScrapedContent
   ): Promise<string> {
-    const systemPrompt = `You are an expert Evony: The King's Return strategy advisor. Provide detailed, actionable advice on:
-
-- Troop compositions and counter strategies
-- Building priorities and resource management
-- PvP and PvE tactics
-- Event optimization
-- Alliance warfare
-- General and equipment recommendations
-
-Be specific, practical, and use bullet points for clarity.`;
+    const systemPrompt = `You are an expert Evony: The King's Return strategy advisor. Provide detailed, actionable advice on troop compositions, building priorities, PvP/PvE tactics, and event optimization.`;
 
     const messages: Message[] = [
       { role: 'system', content: systemPrompt },
@@ -149,4 +139,33 @@ Please analyze this battle and provide:
   }
 }
 
-export const deepseekService = new DeepSeekService();
+const deepseekService = new DeepSeekService();
+
+// Export all the functions that your existing code expects
+export const analyzeReports = async (reports: any, lang: string = 'en') => {
+  const reportText = JSON.stringify(reports);
+  return deepseekService.analyzeBattleReport(reportText);
+};
+
+export const chatWithAIStream = async (
+  profile: any,
+  lang: string,
+  onChunk: (chunk: string) => void
+) => {
+  const messages: Message[] = [
+    {
+      role: 'system',
+      content: 'You are an Evony strategy assistant.',
+    },
+    {
+      role: 'user',
+      content: JSON.stringify(profile),
+    },
+  ];
+
+  const response = await deepseekService.chat(messages);
+  onChunk(response);
+  return response;
+};
+
+export { deepseekService };
