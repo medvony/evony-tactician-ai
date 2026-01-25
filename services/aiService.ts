@@ -4,8 +4,12 @@ import { UserProfile, AnalysisResponse } from '../types';
 import { SYSTEM_PROMPT } from '../constants';
 
 // Configuration
+// Configuration
 const GROQ_API_KEY = process.env.VITE_GROQ_API_KEY;
-const groq = new Groq({ apiKey: GROQ_API_KEY });
+const groq = new Groq({ 
+  apiKey: GROQ_API_KEY,
+  dangerouslyAllowBrowser: true  // ADD THIS LINE
+});
 
 // Backup: Google Gemini (if needed)
 import { GoogleGenerativeAI } from '@google/generative-ai';
