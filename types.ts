@@ -28,7 +28,8 @@ export interface AnalysisResponse {
   sources?: Array<{ title: string; uri: string }>;
 }
 
+// Updated to match AI service expectations
 export interface ChatMessage {
-  role: 'user' | 'model';
-  text: string;
+  role: 'user' | 'assistant' | 'model';  // Added 'assistant' for AI responses
+  content: string;  // Changed from 'text' to 'content' for Groq compatibility
 }
