@@ -13,7 +13,18 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: false,
     rollupOptions: {
-      external: ['tesseract.js']
+      // FIX: Externalize problematic modules
+      external: ['tesseract.js'],
+    }
+  },
+  optimizeDeps: {
+    // FIX: Exclude Tesseract.js from dependency optimization
+    exclude: ['tesseract.js'],
+  },
+  resolve: {
+    // FIX: Add alias for Tesseract.js browser build
+    alias: {
+      'tesseract.js': 'tesseract.js/dist/tesseract.esm.js'
     }
   }
 });
