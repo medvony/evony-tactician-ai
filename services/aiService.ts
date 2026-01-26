@@ -3,44 +3,67 @@ import Groq from 'groq-sdk';
 import { UserProfile, AnalysisResponse } from '../types';
 import { SYSTEM_PROMPT } from '../constants';
 
-// Configuration
-// Configuration
-const GROQ_API_KEY = process.env.VITE_GROQ_API_KEY;
+// Use import.meta.env - Vite will replace these during build
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+
 const groq = new Groq({ 
   apiKey: GROQ_API_KEY,
-  dangerouslyAllowBrowser: true  // ADD THIS LINE
+  dangerouslyAllowBrowser: true
 });
 
-// Backup: Google Gemini (if needed)
+// Backup: Google Gemini
 import { GoogleGenerativeAI } from '@google/generative-ai';
-const GEMINI_API_KEY = process.env.VITE_GEMINI_API_KEY;
 const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 export const analyzeReports = async (
   images: string[], 
   profile: UserProfile
 ): Promise<AnalysisResponse> => {
-  console.log('Starting battle report analysis...');
+  console.log('🎯 Starting battle report analysis...');
   
   try {
+    // Validate API key
+    if (!GROQ_API_KEY) {
+      console.error('❌ Missing GROQ_API_KEY');
+      console.log('Available env vars:', Object.keys(import.meta.env));
+      throw new Error('Groq API key not configured. Please check Vercel environment variables.');
+    }
+    
+    console.log('✅ API key validated');
+    
     // Step 1: Extract text from images using OCR
+    console.log('📸 Step 1: Extracting text from images...');
     const extractedText = await processBattleReports(images);
     
+    if (!extractedText || extractedText.trim().length === 0) {
+      throw new Error('No text could be extracted from any of the images.');
+    }
+    
+    console.log('✅ Text extracted successfully');
+    console.log('📝 Extracted text length:', extractedText.length);
+    
     // Step 2: Prepare the analysis prompt
+    console.log('📝 Step 2: Preparing analysis prompt...');
     const prompt = createAnalysisPrompt(extractedText, profile);
     
     // Step 3: Use Groq (Llama 3.1) for analysis
+    console.log('🤖 Step 3: Analyzing with AI...');
     const analysis = await analyzeWithGroq(prompt);
     
     // Step 4: Parse and structure the response
-    return parseAnalysisResponse(analysis, extractedText);
+    console.log('📊 Step 4: Structuring response...');
+    const result = parseAnalysisResponse(analysis, extractedText);
+    
+    console.log('✅ Analysis complete!');
+    return result;
     
   } catch (error: any) {
-    console.error('Analysis pipeline failed:', error);
+    console.error('❌ Analysis pipeline failed:', error);
     
     // Fallback to Gemini if Groq fails
-    if (genAI && (error.message.includes('Groq') || error.message.includes('Llama'))) {
-      console.log('Falling back to Gemini...');
+    if (genAI && (error.message.includes('Groq') || error.message.includes('API key'))) {
+      console.log('🔄 Falling back to Gemini...');
       return await analyzeWithGeminiFallback(images, profile);
     }
     
@@ -77,6 +100,8 @@ FORMAT YOUR RESPONSE WITH THESE EXACT HEADERS:
 
 async function analyzeWithGroq(prompt: string): Promise<string> {
   try {
+    console.log('📡 Sending request to Groq API...');
+    
     const response = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       messages: [
@@ -87,15 +112,29 @@ async function analyzeWithGroq(prompt: string): Promise<string> {
       max_tokens: 2000,
     });
     
-    return response.choices[0]?.message?.content || 'No analysis generated.';
+    const content = response.choices[0]?.message?.content;
+    
+    if (!content) {
+      throw new Error('AI returned empty response');
+    }
+    
+    console.log('✅ Received AI response');
+    return content;
   } catch (error: any) {
-    console.error('Groq API error:', error);
+    console.error('❌ Groq API error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      status: error.status,
+      type: error.type
+    });
     throw new Error(`Groq API error: ${error.message}`);
   }
 }
 
 async function analyzeWithGeminiFallback(images: string[], profile: UserProfile): Promise<AnalysisResponse> {
   if (!genAI) throw new Error('No fallback AI available');
+  
+  console.log('🤖 Using Gemini fallback...');
   
   const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   const prompt = `Analyze these Evony battle reports for player: ${JSON.stringify(profile)}`;
@@ -137,7 +176,7 @@ function parseAnalysisResponse(text: string, originalText: string): AnalysisResp
   };
 }
 
-// Streaming chat function (optional)
+// Streaming chat function
 export async function* chatWithAIStream(history: any[], message: string) {
   const stream = await groq.chat.completions.create({
     model: 'llama-3.1-8b-instant',
