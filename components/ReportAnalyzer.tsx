@@ -2,13 +2,13 @@ import React, { useState, useRef } from 'react';
 import { FileImage, Loader2, Send, Trash2, ShieldCheck, Sword, PlusCircle, ExternalLink, Info } from 'lucide-react';
 import { UserProfile, AnalysisResponse, ChatMessage, Language } from '../types';
 import { translations } from '../translations';
-// CHANGE 1: Update import to use our new aiService instead of geminiService
 import { analyzeReports, chatWithAIStream } from '../services/aiService';
 
 const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ profile, lang }) => {
   const t = translations[lang];
   const [images, setImages] = useState<string[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
+  const [ocrStatus, setOcrStatus] = useState<string>('');
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -30,12 +30,11 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
     setInput('');
     setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
     setChatting(true);
+    
     try {
       let fullResponse = "";
       setChatMessages(prev => [...prev, { role: 'model', text: "" }]);
       
-      // CHANGE 2: Update chatWithAIStream parameters
-      // Removed 'profile' and 'result' parameters as our new function doesn't need them
       const stream = chatWithAIStream(chatMessages, userMsg);
       
       for await (const chunk of stream) {
@@ -48,10 +47,9 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
       }
     } catch (err) { 
       console.error("Chat error:", err);
-      // Add error message to chat
       setChatMessages(prev => [...prev, { 
         role: 'model', 
-        text: `Error: ${err instanceof Error ? err.message : 'Failed to get response'}` 
+        text: `❌ Error: ${err instanceof Error ? err.message : 'Failed to get response'}` 
       }]);
     } finally { 
       setChatting(false); 
@@ -67,57 +65,43 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
 
   const handleAnalysis = async () => {
     if (images.length === 0 || analyzing) return;
+    
     setAnalyzing(true);
-    try {
-      // This now uses OCR + Groq AI
-      const res = await analyzeReports(images, profile);
-      setResult(res);
-      
-      // Optional: Add initial analysis message to chat
-      if (res.summary) {
-        setChatMessages([{ 
-          role: 'model', 
-          text: `Analysis complete! ${res.summary.substring(0, 200)}...` 
-        }]);
-      }
-    } catch (e: any) {
-      console.error("Analysis Failure:", e);
-      alert(`Tactical Error: ${e.message || "Uplink disconnected during analysis."}`);
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  // ADD THIS: Show OCR processing status
-  const [ocrStatus, setOcrStatus] = useState<string>('');
-  
-  // Optional: Add OCR progress indicator
-  const handleAnalysisWithOcrFeedback = async () => {
-    if (images.length === 0 || analyzing) return;
-    setAnalyzing(true);
-    setOcrStatus('Extracting text from battle reports...');
+    setOcrStatus('🔍 Initializing OCR engine...');
     
     try {
+      // Check if Tesseract is loaded
+      if (typeof window !== 'undefined' && !window.Tesseract) {
+        throw new Error('OCR library not loaded. Please refresh the page.');
+      }
+      
+      setOcrStatus('📸 Extracting text from battle reports...');
+      
       const res = await analyzeReports(images, profile);
+      
+      setOcrStatus('🤖 AI analyzing tactics...');
       setResult(res);
       setOcrStatus('');
       
       if (res.summary) {
         setChatMessages([{ 
           role: 'model', 
-          text: `✅ Analysis complete! ${res.summary.substring(0, 200)}...` 
+          text: `✅ Analysis complete!\n\n${res.summary.substring(0, 300)}...` 
         }]);
       }
     } catch (e: any) {
-      console.error("Analysis Failure:", e);
-      alert(`Tactical Error: ${e.message || "Uplink disconnected during analysis."}`);
+      console.error("❌ Analysis Failure:", e);
+      setOcrStatus('');
+      
+      // Show user-friendly error
+      const errorMsg = e.message || "Unknown error occurred";
+      alert(`⚠️ Analysis Failed\n\n${errorMsg}\n\nTips:\n• Check browser console (F12) for details\n• Ensure images are clear screenshots\n• Try refreshing the page`);
     } finally {
       setAnalyzing(false);
       setOcrStatus('');
     }
   };
 
-  // CHANGE 3: Update the analysis button to show OCR status
   return (
     <div className="space-y-6">
       <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
@@ -125,9 +109,9 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
           <FileImage className="text-amber-500" /> {t.addReport}
         </h3>
         
-        {/* ADD OCR STATUS INDICATOR */}
+        {/* OCR Status Indicator */}
         {ocrStatus && (
-          <div className="mb-4 p-3 bg-blue-900/30 border border-blue-800 rounded-lg">
+          <div className="mb-4 p-3 bg-blue-900/30 border border-blue-800 rounded-lg animate-pulse">
             <div className="flex items-center gap-2 text-blue-300 text-sm">
               <Loader2 className="animate-spin" size={16} />
               <span>{ocrStatus}</span>
@@ -135,6 +119,7 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
           </div>
         )}
         
+        {/* Image Grid */}
         <div className="grid grid-cols-3 gap-4 mb-4">
           {images.map((img, i) => (
             <div key={i} className="aspect-[3/4] rounded-lg overflow-hidden relative group border border-slate-700">
@@ -167,28 +152,117 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
           accept="image/*" 
         />
         
+        {/* Analysis Button */}
         <button 
           disabled={images.length === 0 || analyzing} 
-          onClick={handleAnalysisWithOcrFeedback} // Use the new function
-          className="w-full bg-indigo-600 py-4 rounded-xl font-black flex items-center justify-center gap-2 hover:bg-indigo-500 disabled:bg-slate-800 transition-all shadow-lg overflow-hidden relative group"
+          onClick={handleAnalysis}
+          className="w-full bg-indigo-600 py-4 rounded-xl font-black flex items-center justify-center gap-2 hover:bg-indigo-500 disabled:bg-slate-800 disabled:cursor-not-allowed transition-all shadow-lg overflow-hidden relative group"
         >
           <span className="relative z-10 flex items-center gap-2">
             {analyzing ? <Loader2 className="animate-spin" /> : <Sword size={20} />} 
-            {analyzing ? (ocrStatus ? 'Processing OCR...' : t.strategizing) : t.runAnalysis}
+            {analyzing ? (ocrStatus || t.strategizing || 'Processing...') : (t.runAnalysis || 'Analyze Reports')}
           </span>
           {analyzing && <div className="absolute inset-0 bg-white/10 animate-pulse"></div>}
         </button>
         
-        {/* ADD TIP ABOUT IMAGE QUALITY */}
-        <div className="mt-4 text-xs text-slate-500 text-center">
-          Tip: Use clear screenshots for better OCR results
+        {/* Help Text */}
+        <div className="mt-4 p-3 bg-slate-950/50 border border-slate-800 rounded-lg">
+          <div className="flex items-start gap-2 text-xs text-slate-400">
+            <Info size={14} className="mt-0.5 flex-shrink-0 text-amber-500" />
+            <div>
+              <p className="font-semibold text-slate-300 mb-1">For best OCR results:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>Use clear, high-resolution screenshots</li>
+                <li>Ensure text is readable and not blurry</li>
+                <li>Crop to show only the battle report</li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* The rest of your component remains exactly the same */}
+      {/* Analysis Results */}
       {result && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
-          {/* ... rest of your existing JSX ... */}
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6">
+            <h3 className="text-2xl font-black flex items-center gap-2">
+              <ShieldCheck /> {t.tacticalAnalysis || 'Tactical Analysis'}
+            </h3>
+            <p className="text-sm text-indigo-100 mt-1 opacity-90">
+              {result.reportType} Report • AI-Powered Strategy
+            </p>
+          </div>
+          
+          <div className="p-6 space-y-6">
+            {/* Enemy Intel */}
+            <div>
+              <h4 className="text-sm font-black text-amber-500 uppercase tracking-widest mb-3">
+                {t.enemyIntel || 'Enemy Intel'}
+              </h4>
+              <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">{result.summary}</p>
+            </div>
+            
+            {/* Recommendations */}
+            <div className="border-t border-slate-800 pt-6">
+              <h4 className="text-sm font-black text-green-500 uppercase tracking-widest mb-3">
+                {t.recommendations || 'Recommended Counter'}
+              </h4>
+              <p className="text-slate-300 leading-relaxed whitespace-pre-wrap">{result.recommendations}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chat Interface */}
+      {result && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+          <div className="bg-slate-950 p-4 border-b border-slate-800">
+            <h3 className="font-black text-sm uppercase tracking-widest text-amber-500">
+              {t.askQuestions || 'Ask Follow-up Questions'}
+            </h3>
+          </div>
+          
+          <div className="p-4 h-64 overflow-y-auto space-y-3">
+            {chatMessages.map((msg, i) => (
+              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[80%] p-3 rounded-lg ${
+                  msg.role === 'user' 
+                    ? 'bg-indigo-600 text-white' 
+                    : 'bg-slate-800 text-slate-200'
+                }`}>
+                  <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                </div>
+              </div>
+            ))}
+            {chatting && (
+              <div className="flex justify-start">
+                <div className="bg-slate-800 p-3 rounded-lg">
+                  <Loader2 className="animate-spin text-amber-500" size={16} />
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="p-4 border-t border-slate-800 bg-slate-950">
+            <div className="flex gap-2">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={t.askSomething || "Ask about the battle..."}
+                className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm resize-none focus:outline-none focus:border-indigo-500"
+                rows={2}
+                disabled={chatting}
+              />
+              <button
+                onClick={handleSendMessage}
+                disabled={!input.trim() || chatting}
+                className="bg-indigo-600 px-4 rounded-lg hover:bg-indigo-500 disabled:bg-slate-800 disabled:cursor-not-allowed transition-colors"
+              >
+                <Send size={18} />
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
