@@ -26,7 +26,7 @@ export const analyzeReports = async (
     // Validate API key
     if (!GROQ_API_KEY) {
       console.error('❌ Missing GROQ_API_KEY');
-      console.log('Available env vars:', Object.keys(import.meta.env));
+      console.log('Available env vars:', Object.keys(process.env));
       throw new Error('Groq API key not configured. Please check Vercel environment variables.');
     }
     
