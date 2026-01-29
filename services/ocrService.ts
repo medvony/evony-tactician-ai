@@ -1,8 +1,4 @@
-declare global {
-  interface Window {
-    Tesseract: any;
-  }
-}
+import { createWorker } from 'tesseract.js';
 
 /**
  * Extract text from Evony battle report screenshots
@@ -12,23 +8,11 @@ export async function extractTextFromImage(imageDataUrl: string): Promise<string
   console.log('🔍 Starting OCR for battle report...');
   
   try {
-    // Check if Tesseract.js is loaded from CDN
-    if (typeof window === 'undefined' || !window.Tesseract) {
-      throw new Error('❌ Tesseract.js not loaded. Make sure the CDN script is in index.html');
-    }
-    
-    console.log('✅ Tesseract.js loaded successfully');
-    
-    // Use the global Tesseract from CDN
-    const { createWorker } = window.Tesseract;
-    
     console.log('⚙️ Initializing OCR worker...');
     
     // Initialize worker with optimized settings for game screenshots
     const worker = await createWorker({
-      logger: (m: any) => {
-        console.log(`📊 OCR Progress: ${m.status} - ${Math.round((m.progress || 0) * 100)}%`);
-      },
+      // No logger here to prevent DataCloneError
       errorHandler: (err: any) => {
         console.error('❌ OCR Worker Error:', err);
       },
@@ -65,12 +49,6 @@ export async function extractTextFromImage(imageDataUrl: string): Promise<string
     
   } catch (error: any) {
     console.error('❌ OCR processing failed:', error);
-    
-    // Provide helpful error messages
-    if (error.message?.includes('Tesseract.js not loaded')) {
-      throw new Error('OCR library not loaded. Please refresh the page and try again.');
-    }
-    
     throw new Error(`Failed to extract text from battle report: ${error.message}`);
   }
 }
@@ -85,9 +63,9 @@ export async function processBattleReports(images: string[]): Promise<string> {
   
   for (let i = 0; i < images.length; i++) {
     try {
-      console.log(`\n--- Processing Report ${i + 1}/${images.length} ---`);
+      console.log(`\n--- Processing Report \( {i + 1}/ \){images.length} ---`);
       const text = await extractTextFromImage(images[i]);
-      extractedTexts.push(`--- Battle Report ${i + 1} ---\n${text}\n`);
+      extractedTexts.push(`--- Battle Report \( {i + 1} ---\n \){text}\n`);
     } catch (error: any) {
       console.error(`❌ Failed to process report ${i + 1}:`, error.message);
       extractedTexts.push(`--- Battle Report ${i + 1} [OCR Failed: ${error.message}] ---\n`);
