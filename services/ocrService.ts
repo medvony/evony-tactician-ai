@@ -1,4 +1,5 @@
 import { createWorker } from 'tesseract.js';
+// Version check: 2.0
 
 /**
  * Extract text from Evony battle report screenshots
