@@ -1,20 +1,17 @@
 import { processBattleReports } from './ocrService';
 import Groq from 'groq-sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { UserProfile, AnalysisResponse } from '../types';
 import { SYSTEM_PROMPT } from '../constants';
 
 const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const groq = new Groq({ 
   apiKey: GROQ_API_KEY,
   dangerouslyAllowBrowser: true
 });
 
-// Backup: Google Gemini
-//import { GoogleGenerativeAI } from '@google/generative-ai';
-//const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
+const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 export const analyzeReports = async (
   images: string[], 
@@ -26,7 +23,7 @@ export const analyzeReports = async (
     // Validate API key
     if (!GROQ_API_KEY) {
       console.error('❌ Missing GROQ_API_KEY');
-      console.log('Available env vars:', Object.keys(process.env));
+      console.log('Available env vars:', Object.keys(import.meta.env));
       throw new Error('Groq API key not configured. Please check Vercel environment variables.');
     }
     
@@ -82,7 +79,7 @@ ${extractedText}
 PLAYER PROFILE:
 - March Size: ${profile.marchSize}
 - Embassy: ${profile.embassyCapacity}
-- Max Tiers: Ground T${profile.highestTiers?.Ground}, Ranged T${profile.highestTiers?.Ranged}, Mounted T${profile.highestTiers?.Mounted}, Siege T${profile.highestTiers?.Siege}
+- Max Tiers: Ground T\( {profile.highestTiers?.Ground}, Ranged T \){profile.highestTiers?.Ranged}, Mounted T\( {profile.highestTiers?.Mounted}, Siege T \){profile.highestTiers?.Siege}
 
 ANALYSIS REQUEST:
 1. Analyze the extracted battle report text
@@ -162,7 +159,7 @@ async function analyzeWithGeminiFallback(images: string[], profile: UserProfile)
 
 function parseAnalysisResponse(text: string, originalText: string): AnalysisResponse {
   const extractSection = (header: string) => {
-    const regex = new RegExp(`${header}[\\s\\S]*?(?=###|$)`, 'i');
+    const regex = new RegExp(`\( {header}[\\s\\S]*?(?=###| \))`, 'i');
     const match = text.match(regex);
     return match ? match[0].replace(header, '').trim() : '';
   };
