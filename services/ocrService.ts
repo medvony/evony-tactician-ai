@@ -5,7 +5,7 @@ import { createWorker } from 'tesseract.js';
  * Extract text from Evony battle report screenshots
  * Optimized for game UI text, numbers, and battle stats
  */
-export async function extractTextFromImage(imageDataUrl: string): Promise<string> {
+export async function extractTextFromImage(imageDataUrl) {
   console.log('🔍 Starting OCR for battle report...');
   
   try {
@@ -14,7 +14,7 @@ export async function extractTextFromImage(imageDataUrl: string): Promise<string
     // Initialize worker with optimized settings for game screenshots
     const worker = await createWorker({
       // No logger here to prevent DataCloneError
-      errorHandler: (err: any) => {
+      errorHandler: (err) => {
         console.error('❌ OCR Worker Error:', err);
       },
     });
@@ -48,7 +48,7 @@ export async function extractTextFromImage(imageDataUrl: string): Promise<string
     
     return text.trim();
     
-  } catch (error: any) {
+  } catch (error) {
     console.error('❌ OCR processing failed:', error);
     throw new Error(`Failed to extract text from battle report: ${error.message}`);
   }
@@ -57,17 +57,17 @@ export async function extractTextFromImage(imageDataUrl: string): Promise<string
 /**
  * Process multiple battle report images
  */
-export async function processBattleReports(images: string[]): Promise<string> {
+export async function processBattleReports(images) {
   console.log(`📋 Processing ${images.length} battle report(s)...`);
   
-  const extractedTexts: string[] = [];
+  const extractedTexts = [];
   
   for (let i = 0; i < images.length; i++) {
     try {
-      console.log(`\n--- Processing Report \( {i + 1}/ \){images.length} ---`);
+      console.log(`\n--- Processing Report ${i + 1}/${images.length} ---`);
       const text = await extractTextFromImage(images[i]);
-      extractedTexts.push(`--- Battle Report \( {i + 1} ---\n \){text}\n`);
-    } catch (error: any) {
+      extractedTexts.push(`--- Battle Report ${i + 1} ---\n${text}\n`);
+    } catch (error) {
       console.error(`❌ Failed to process report ${i + 1}:`, error.message);
       extractedTexts.push(`--- Battle Report ${i + 1} [OCR Failed: ${error.message}] ---\n`);
     }
