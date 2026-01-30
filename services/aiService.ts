@@ -4,8 +4,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { UserProfile, AnalysisResponse } from '../types';
 import { SYSTEM_PROMPT } from '../constants';
 
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+const GROQ_API_KEY = process.env.VITE_GROQ_API_KEY;
+const GEMINI_API_KEY = process.env.VITE_GEMINI_API_KEY;
 const groq = new Groq({ 
   apiKey: GROQ_API_KEY,
   dangerouslyAllowBrowser: true
