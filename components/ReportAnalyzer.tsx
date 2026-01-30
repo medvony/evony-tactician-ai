@@ -46,36 +46,48 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
   };
 
   const handleSendMessage = async () => {
-    if (!input.trim() || chatting) return;
-    const userMsg = input;
-    setInput('');
-    setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
-    setChatting(true);
+  if (!input.trim() || chatting) return;
+  const userMsg = input;
+  setInput('');
+  setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+  setChatting(true);
+  
+  try {
+    let fullResponse = "";
+    setChatMessages(prev => [...prev, { role: 'model', text: "" }]);
     
-    try {
-      let fullResponse = "";
-      setChatMessages(prev => [...prev, { role: 'model', text: "" }]);
-      
-      const stream = chatWithAIStream(chatMessages, userMsg);
-      
-      for await (const chunk of stream) {
-        fullResponse += chunk;
-        setChatMessages(prev => {
-          const newMsgs = [...prev];
-          newMsgs[newMsgs.length - 1].text = fullResponse;
-          return newMsgs;
-        });
-      }
-    } catch (err) { 
-      console.error("Chat error:", err);
-      setChatMessages(prev => [...prev, { 
-        role: 'model', 
-        text: `❌ Error: ${err instanceof Error ? err.message : 'Failed to get response'}` 
-      }]);
-    } finally { 
-      setChatting(false); 
+    // Create battle context from the analysis result
+    const battleContext = result ? `
+Battle Report Summary:
+${result.summary}
+
+Recommendations:
+${result.recommendations}
+
+Extracted Data:
+${result.anonymizedData || 'No data available'}
+    `.trim() : undefined;
+    
+    const stream = chatWithAIStream(chatMessages, userMsg, battleContext);
+    
+    for await (const chunk of stream) {
+      fullResponse += chunk;
+      setChatMessages(prev => {
+        const newMsgs = [...prev];
+        newMsgs[newMsgs.length - 1].text = fullResponse;
+        return newMsgs;
+      });
     }
-  };
+  } catch (err) { 
+    console.error("Chat error:", err);
+    setChatMessages(prev => [...prev, { 
+      role: 'model', 
+      text: `❌ Error: ${err instanceof Error ? err.message : 'Failed to get response'}` 
+    }]);
+  } finally { 
+    setChatting(false); 
+  }
+};
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
