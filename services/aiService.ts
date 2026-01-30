@@ -4,8 +4,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { UserProfile, AnalysisResponse } from '../types';
 import { SYSTEM_PROMPT } from '../constants';
 
-const GROQ_API_KEY = process.env.VITE_GROQ_API_KEY;
-const GEMINI_API_KEY = process.env.VITE_GEMINI_API_KEY;
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const groq = new Groq({ 
   apiKey: GROQ_API_KEY,
   dangerouslyAllowBrowser: true
@@ -24,7 +24,7 @@ export const analyzeReports = async (
     // Validate API key
     if (!GROQ_API_KEY) {
       console.error('❌ Missing GROQ_API_KEY');
-      console.log('Available env vars:', Object.keys(process.env));
+      console.log('Available env vars:', Object.keys(import.meta.env));
       throw new Error('Groq API key not configured. Please check Vercel environment variables.');
     }
     
