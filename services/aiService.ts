@@ -1,4 +1,4 @@
-import { processBattleReports } from './ocrService';
+import { ocrService } from './ocrService';
 import Groq from 'groq-sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { UserProfile, AnalysisResponse } from '../types';
@@ -15,7 +15,8 @@ const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 export const analyzeReports = async (
   images: string[], 
-  profile: UserProfile
+  profile: UserProfile,
+  ocrTexts?: string[]
 ): Promise<AnalysisResponse> => {
   console.log('🎯 Starting battle report analysis...');
   
@@ -29,9 +30,39 @@ export const analyzeReports = async (
     
     console.log('✅ API key validated');
     
-    // Step 1: Extract text from images using OCR
-    console.log('📸 Step 1: Extracting text from images...');
-    const extractedText = await processBattleReports(images);
+    // Step 1: Use provided OCR texts or extract new ones
+    let extractedText = '';
+    
+    if (ocrTexts && ocrTexts.length > 0) {
+      console.log('✅ Using pre-extracted OCR text');
+      extractedText = ocrTexts.join('\n\n--- NEXT REPORT ---\n\n');
+    } else {
+      // Fallback: extract text from images
+      console.log('📸 Step 1: Extracting text from images...');
+      const ocrResults: string[] = [];
+      
+      for (let i = 0; i < images.length; i++) {
+        try {
+          // Create image element from base64
+          const img = new Image();
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = () => reject(new Error(`Failed to load image ${i + 1}`));
+            img.src = images[i];
+          });
+          
+          // Perform OCR
+          const result = await ocrService.recognizeText(img);
+          ocrResults.push(result.text);
+          console.log(`✅ OCR completed for image ${i + 1} (confidence: ${result.confidence}%)`);
+        } catch (error) {
+          console.error(`❌ OCR failed for image ${i + 1}:`, error);
+          ocrResults.push('[OCR extraction failed for this image]');
+        }
+      }
+      
+      extractedText = ocrResults.join('\n\n--- NEXT REPORT ---\n\n');
+    }
     
     if (!extractedText || extractedText.trim().length === 0) {
       throw new Error('No text could be extracted from any of the images.');
@@ -79,7 +110,7 @@ ${extractedText}
 PLAYER PROFILE:
 - March Size: ${profile.marchSize}
 - Embassy: ${profile.embassyCapacity}
-- Max Tiers: Ground T\( {profile.highestTiers?.Ground}, Ranged T \){profile.highestTiers?.Ranged}, Mounted T\( {profile.highestTiers?.Mounted}, Siege T \){profile.highestTiers?.Siege}
+- Max Tiers: Ground T${profile.highestTiers?.Ground}, Ranged T${profile.highestTiers?.Ranged}, Mounted T${profile.highestTiers?.Mounted}, Siege T${profile.highestTiers?.Siege}
 
 ANALYSIS REQUEST:
 1. Analyze the extracted battle report text
@@ -159,7 +190,7 @@ async function analyzeWithGeminiFallback(images: string[], profile: UserProfile)
 
 function parseAnalysisResponse(text: string, originalText: string): AnalysisResponse {
   const extractSection = (header: string) => {
-    const regex = new RegExp(`\( {header}[\\s\\S]*?(?=###| \))`, 'i');
+    const regex = new RegExp(`${header}[\\s\\S]*?(?=###|$)`, 'i');
     const match = text.match(regex);
     return match ? match[0].replace(header, '').trim() : '';
   };
@@ -175,13 +206,20 @@ function parseAnalysisResponse(text: string, originalText: string): AnalysisResp
 
 // Streaming chat function
 export async function* chatWithAIStream(history: any[], message: string) {
-  const stream = await groq.chat.completions.create({
-    model: 'llama-3.1-8b-instant',
-    messages: [...history, { role: 'user', content: message }],
-    stream: true,
-  });
-  
-  for await (const chunk of stream) {
-    yield chunk.choices[0]?.delta?.content || '';
+  try {
+    const stream = await groq.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: [...history, { role: 'user', content: message }],
+      stream: true,
+      temperature: 0.7,
+      max_tokens: 1000,
+    });
+    
+    for await (const chunk of stream) {
+      yield chunk.choices[0]?.delta?.content || '';
+    }
+  } catch (error: any) {
+    console.error('Chat stream error:', error);
+    yield `Error: ${error.message}`;
   }
 }
