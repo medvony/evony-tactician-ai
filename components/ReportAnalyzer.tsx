@@ -90,11 +90,13 @@ ${result.anonymizedData || 'No data available'}
 };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
+  // Only send on Ctrl+Enter or Cmd+Enter, not just Enter
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    handleSendMessage();
+  }
+  // Allow Enter for new lines, Shift+Enter also works for new lines
+};
 
   const handleAnalysis = async () => {
   if (images.length === 0 || analyzing) return;
