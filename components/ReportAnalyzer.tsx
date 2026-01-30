@@ -1,8 +1,9 @@
-import React, { useState, useRef } from 'react';
-import { FileImage, Loader2, Send, Trash2, ShieldCheck, Sword, PlusCircle, ExternalLink, Info } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { FileImage, Loader2, Send, Trash2, ShieldCheck, Sword, PlusCircle, Info } from 'lucide-react';
 import { UserProfile, AnalysisResponse, ChatMessage, Language } from '../types';
 import { translations } from '../translations';
 import { analyzeReports, chatWithAIStream } from '../services/aiService';
+import { ocrService } from '../services/ocrService';
 
 const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ profile, lang }) => {
   const t = translations[lang];
@@ -14,6 +15,26 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
   const [input, setInput] = useState('');
   const [chatting, setChatting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize OCR on component mount
+  useEffect(() => {
+    const initOCR = async () => {
+      try {
+        console.log('Initializing OCR service...');
+        await ocrService.initialize();
+        console.log('OCR service ready');
+      } catch (error) {
+        console.error('Failed to initialize OCR:', error);
+      }
+    };
+    
+    initOCR();
+    
+    // Cleanup on unmount
+    return () => {
+      ocrService.terminate().catch(console.error);
+    };
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []) as File[];
@@ -70,18 +91,37 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
     setOcrStatus('🔍 Initializing OCR engine...');
     
     try {
-      // Check if Tesseract is loaded
-      if (typeof window !== 'undefined' && !window.Tesseract) {
-        throw new Error('OCR library not loaded. Please refresh the page.');
+      // Process each image with OCR
+      const ocrResults: string[] = [];
+      
+      for (let i = 0; i < images.length; i++) {
+        setOcrStatus(`📸 Processing report ${i + 1}/${images.length}...`);
+        
+        // Create image element from base64
+        const img = new Image();
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error('Failed to load image'));
+          img.src = images[i];
+        });
+        
+        // Perform OCR
+        const ocrResult = await ocrService.recognizeText(img);
+        ocrResults.push(ocrResult.text);
+        
+        console.log(`Report ${i + 1} OCR confidence: ${ocrResult.confidence}%`);
       }
       
-      setOcrStatus('📸 Extracting text from battle reports...');
-      
-      const res = await analyzeReports(images, profile);
-      
       setOcrStatus('🤖 AI analyzing tactics...');
+      
+      // Pass OCR text to AI analysis
+      const res = await analyzeReports(images, profile, ocrResults);
+      
       setResult(res);
-      setOcrStatus('');
+      setOcrStatus('✅ Analysis complete!');
+      
+      // Clear status after a moment
+      setTimeout(() => setOcrStatus(''), 2000);
       
       if (res.summary) {
         setChatMessages([{ 
@@ -95,10 +135,9 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
       
       // Show user-friendly error
       const errorMsg = e.message || "Unknown error occurred";
-      alert(`⚠️ Analysis Failed\n\n${errorMsg}\n\nTips:\n• Check browser console (F12) for details\n• Ensure images are clear screenshots\n• Try refreshing the page`);
+      alert(`⚠️ Analysis Failed\n\n${errorMsg}\n\nTips:\n• Check browser console (F12) for details\n• Ensure images are clear screenshots\n• Try refreshing the page\n• Check your internet connection`);
     } finally {
       setAnalyzing(false);
-      setOcrStatus('');
     }
   };
 
@@ -175,6 +214,7 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
                 <li>Use clear, high-resolution screenshots</li>
                 <li>Ensure text is readable and not blurry</li>
                 <li>Crop to show only the battle report</li>
+                <li>Wait for OCR initialization on first load</li>
               </ul>
             </div>
           </div>
