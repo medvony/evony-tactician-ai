@@ -1,5 +1,3 @@
-import Tesseract from 'tesseract.js';
-
 interface OCRResult {
   text: string;
   confidence: number;
@@ -7,10 +5,8 @@ interface OCRResult {
 
 class OCRService {
   private static instance: OCRService;
-  private worker: Tesseract.Worker | null = null;
-  private isInitialized: boolean = false;
-  private initPromise: Promise<void> | null = null;
-
+  private readonly API_KEY = 'K87899142388957'; // Free public key
+  
   private constructor() {}
 
   static getInstance(): OCRService {
@@ -21,91 +17,68 @@ class OCRService {
   }
 
   async initialize(): Promise<void> {
-    // If already initialized, return immediately
-    if (this.isInitialized && this.worker) {
-      return;
-    }
-
-    // If initialization is in progress, wait for it
-    if (this.initPromise) {
-      return this.initPromise;
-    }
-
-    // Start new initialization
-    this.initPromise = (async () => {
-      try {
-        console.log('Starting OCR worker initialization...');
-        
-        // Create worker
-        this.worker = await Tesseract.createWorker('eng', 1, {
-          logger: (m) => {
-            if (m.status === 'recognizing text') {
-              console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`);
-            }
-          }
-        });
-
-        console.log('Tesseract.js loaded successfully');
-        this.isInitialized = true;
-      } catch (error) {
-        console.error('Failed to initialize OCR worker:', error);
-        this.worker = null;
-        this.isInitialized = false;
-        this.initPromise = null;
-        throw error;
-      }
-    })();
-
-    return this.initPromise;
+    console.log('✅ OCR.space service ready (25,000 free requests/month)');
   }
 
   async recognizeText(imageData: string | HTMLImageElement | HTMLCanvasElement): Promise<OCRResult> {
     try {
-      // Ensure worker is initialized
-      if (!this.isInitialized || !this.worker) {
-        console.log('Initializing OCR worker...');
-        await this.initialize();
+      // Convert to base64 if needed
+      let base64Image: string;
+      
+      if (typeof imageData === 'string') {
+        base64Image = imageData;
+      } else if (imageData instanceof HTMLImageElement) {
+        const canvas = document.createElement('canvas');
+        canvas.width = imageData.width;
+        canvas.height = imageData.height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(imageData, 0, 0);
+        base64Image = canvas.toDataURL('image/jpeg', 0.95);
+      } else {
+        base64Image = imageData.toDataURL('image/jpeg', 0.95);
       }
 
-      if (!this.worker) {
-        throw new Error('OCR worker failed to initialize');
+      console.log('🔍 Processing with OCR.space...');
+
+      const formData = new FormData();
+      formData.append('base64Image', base64Image);
+      formData.append('language', 'eng');
+      formData.append('isOverlayRequired', 'false');
+      formData.append('detectOrientation', 'true');
+      formData.append('scale', 'true');
+      formData.append('OCREngine', '2'); // Engine 2 is better for game screenshots
+
+      const response = await fetch('https://api.ocr.space/parse/image', {
+        method: 'POST',
+        headers: {
+          'apikey': this.API_KEY
+        },
+        body: formData
+      });
+
+      const data = await response.json();
+      
+      if (data.ParsedResults && data.ParsedResults[0]) {
+        const text = data.ParsedResults[0].ParsedText || '';
+        const confidence = data.ParsedResults[0].TextOverlay ? 95 : 85;
+        
+        console.log('✅ OCR complete - extracted', text.length, 'characters');
+        return { text, confidence };
       }
 
-      console.log('Starting OCR for battle report...');
-      
-      // Perform recognition
-      const result = await this.worker.recognize(imageData);
-      
-      console.log('OCR completed successfully');
-      
-      return {
-        text: result.data.text,
-        confidence: result.data.confidence
-      };
+      if (data.IsErroredOnProcessing) {
+        throw new Error(data.ErrorMessage || 'OCR processing failed');
+      }
+
+      throw new Error('No text detected in image');
     } catch (error) {
-      console.error('OCR recognition error:', error);
-      
-      // Try to reinitialize on error
-      this.isInitialized = false;
-      this.initPromise = null;
-      
-      throw new Error(`Failed to recognize text: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('OCR.space error:', error);
+      throw new Error(`OCR failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
 
   async terminate(): Promise<void> {
-    if (this.worker) {
-      try {
-        await this.worker.terminate();
-        console.log('OCR worker terminated');
-      } catch (error) {
-        console.error('Error terminating OCR worker:', error);
-      } finally {
-        this.worker = null;
-        this.isInitialized = false;
-        this.initPromise = null;
-      }
-    }
+    console.log('OCR service terminated');
   }
 }
 
