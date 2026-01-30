@@ -1,4 +1,5 @@
 import { ocrService } from './ocrService';
+import { battleHistoryService } from './battleHistoryService';
 import Groq from 'groq-sdk';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { UserProfile, AnalysisResponse } from '../types';
@@ -16,7 +17,8 @@ const genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 export const analyzeReports = async (
   images: string[], 
   profile: UserProfile,
-  ocrTexts?: string[]
+  ocrTexts?: string[],
+  userEmail?: string
 ): Promise<AnalysisResponse> => {
   console.log('🎯 Starting battle report analysis...');
   
@@ -79,6 +81,23 @@ export const analyzeReports = async (
     // Step 4: Parse and structure the response
     console.log('📊 Structuring response...');
     const result = parseAnalysisResponse(analysis, extractedText);
+    
+    // Step 5: Save battle to history (both personal and community)
+    if (userEmail && ocrTexts) {
+      try {
+        await battleHistoryService.saveBattle(
+          userEmail,
+          result,
+          ocrTexts,
+          profile,
+          true // shareAnalysis = true (helps community)
+        );
+        console.log('✅ Battle saved to personal history and shared with community');
+      } catch (error) {
+        console.error('Failed to save battle history:', error);
+        // Continue even if save fails
+      }
+    }
     
     console.log('✅ Analysis complete!');
     return result;
@@ -195,25 +214,59 @@ function parseAnalysisResponse(text: string, originalText: string): AnalysisResp
   };
 }
 
-// Streaming chat function - FIXED VERSION
-export async function* chatWithAIStream(history: any[], message: string) {
+// Streaming chat function with collective learning
+export async function* chatWithAIStream(
+  history: any[], 
+  message: string, 
+  battleContext?: string,
+  userEmail?: string
+) {
   try {
-    // Convert chat message format: 'model' -> 'assistant', keep 'user' as is
+    // Convert chat message format: 'model' -> 'assistant'
     const formattedHistory = history.map(msg => ({
-      role: msg.role === 'model' ? 'assistant' : msg.role,  // FIX: Convert 'model' to 'assistant'
+      role: msg.role === 'model' ? 'assistant' : msg.role,
       content: msg.text
     }));
+
+    // Build smart context from personal + community battles
+    let combinedContext = '';
+    if (userEmail) {
+      const keywords = message.toLowerCase().split(' ').filter(w => w.length > 3);
+      combinedContext = await battleHistoryService.buildSmartContext(userEmail, keywords);
+    }
+
+    const systemPrompt = `You are an expert Evony: The King's Return (TKR) battle analyst with access to a collective knowledge base.
+
+${battleContext ? `CURRENT BATTLE REPORT:\n${battleContext}\n\n` : ''}
+
+${combinedContext}
+
+Your capabilities:
+- Analyze Evony TKR battle reports with tactical precision
+- Draw insights from community battle analyses (anonymous AI summaries)
+- Provide counter-strategies based on proven successful tactics
+- Reference specific past battles when relevant
+- Use Evony terminology (T14, T15, ground/ranged/mounted/siege, debuffs, general pairings, etc.)
+
+IMPORTANT Guidelines:
+- When referencing community knowledge, say: "Based on similar community battles..."
+- When referencing user's personal history, say: "In your past battles..."
+- Never ask for march size, troop tiers, or profile info - you already have it
+- Be tactical, concise, and data-driven
+- Focus on actionable counter-strategies
+
+Remember: Community data is AI analysis only - no player identities or raw screenshots are shared.`;
 
     const stream = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
       messages: [
-        { role: 'system', content: 'You are an expert Evony TKR battle analyst. Provide tactical advice based on battle reports.' },
+        { role: 'system', content: systemPrompt },
         ...formattedHistory,
         { role: 'user', content: message }
       ],
       stream: true,
       temperature: 0.7,
-      max_tokens: 1000,
+      max_tokens: 1200,
     });
     
     for await (const chunk of stream) {
@@ -223,4 +276,4 @@ export async function* chatWithAIStream(history: any[], message: string) {
     console.error('Chat stream error:', error);
     yield `❌ Error: ${error.message}`;
   }
-  }
+                }
