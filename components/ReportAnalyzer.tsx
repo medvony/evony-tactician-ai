@@ -85,61 +85,59 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
   };
 
   const handleAnalysis = async () => {
-    if (images.length === 0 || analyzing) return;
+  if (images.length === 0 || analyzing) return;
+  
+  setAnalyzing(true);
+  setOcrStatus('🔍 Initializing OCR engine...');
+  
+  try {
+    await ocrService.initialize();
     
-    setAnalyzing(true);
-    setOcrStatus('🔍 Initializing OCR engine...');
+    setOcrStatus(`📸 Processing ${images.length} battle reports in parallel...`);
     
-    try {
-      // Process each image with OCR
-      const ocrResults: string[] = [];
-      
-      for (let i = 0; i < images.length; i++) {
-        setOcrStatus(`📸 Processing report ${i + 1}/${images.length}...`);
-        
-        // Create image element from base64
+    // Process all images in parallel (much faster!)
+    const ocrPromises = images.map(async (imgSrc, i) => {
+      try {
         const img = new Image();
         await new Promise((resolve, reject) => {
           img.onload = resolve;
-          img.onerror = () => reject(new Error('Failed to load image'));
-          img.src = images[i];
+          img.onerror = () => reject(new Error(`Failed to load image ${i + 1}`));
+          img.src = imgSrc;
         });
         
-        // Perform OCR
-        const ocrResult = await ocrService.recognizeText(img);
-        ocrResults.push(ocrResult.text);
-        
-        console.log(`Report ${i + 1} OCR confidence: ${ocrResult.confidence}%`);
+        const result = await ocrService.recognizeText(img);
+        console.log(`✅ Report ${i + 1}/${images.length} complete (${result.confidence}% confidence)`);
+        return result.text;
+      } catch (error) {
+        console.error(`❌ Failed to process image ${i + 1}:`, error);
+        return `[OCR failed for image ${i + 1}]`;
       }
-      
-      setOcrStatus('🤖 AI analyzing tactics...');
-      
-      // Pass OCR text to AI analysis
-      const res = await analyzeReports(images, profile, ocrResults);
-      
-      setResult(res);
-      setOcrStatus('✅ Analysis complete!');
-      
-      // Clear status after a moment
-      setTimeout(() => setOcrStatus(''), 2000);
-      
-      if (res.summary) {
-        setChatMessages([{ 
-          role: 'model', 
-          text: `✅ Analysis complete!\n\n${res.summary.substring(0, 300)}...` 
-        }]);
-      }
-    } catch (e: any) {
-      console.error("❌ Analysis Failure:", e);
-      setOcrStatus('');
-      
-      // Show user-friendly error
-      const errorMsg = e.message || "Unknown error occurred";
-      alert(`⚠️ Analysis Failed\n\n${errorMsg}\n\nTips:\n• Check browser console (F12) for details\n• Ensure images are clear screenshots\n• Try refreshing the page\n• Check your internet connection`);
-    } finally {
-      setAnalyzing(false);
+    });
+    
+    const ocrResults = await Promise.all(ocrPromises);
+    
+    setOcrStatus('🤖 AI analyzing battle tactics...');
+    const res = await analyzeReports(images, profile, ocrResults);
+    
+    setResult(res);
+    setOcrStatus('✅ Analysis complete!');
+    setTimeout(() => setOcrStatus(''), 2000);
+    
+    if (res.summary) {
+      setChatMessages([{ 
+        role: 'model', 
+        text: `✅ Analysis complete!\n\n${res.summary.substring(0, 300)}...` 
+      }]);
     }
-  };
+  } catch (e: any) {
+    console.error("❌ Analysis Failure:", e);
+    setOcrStatus('');
+    alert(`⚠️ Analysis Failed\n\n${e.message}\n\nTips:\n• Ensure images are clear\n• Check internet connection\n• Try with fewer images first`);
+  } finally {
+    setAnalyzing(false);
+    setOcrStatus('');
+  }
+};
 
   return (
     <div className="space-y-6">
