@@ -1,77 +1,112 @@
-import { createWorker } from 'tesseract.js';
-// Version check: 2.0
+import Tesseract from 'tesseract.js';
 
-/**
- * Extract text from Evony battle report screenshots
- * Optimized for game UI text, numbers, and battle stats
- */
-export async function extractTextFromImage(imageDataUrl) {
-  console.log('🔍 Starting OCR for battle report...');
-  
-  try {
-    console.log('⚙️ Initializing OCR worker...');
-    
-    // Initialize worker with optimized settings for game screenshots
-    const worker = await createWorker({
-      // No logger here to prevent DataCloneError
-      errorHandler: (err) => {
-        console.error('❌ OCR Worker Error:', err);
-      },
-    });
-    
-    console.log('📥 Loading language data...');
-    await worker.loadLanguage('eng');
-    
-    console.log('🚀 Initializing language...');
-    await worker.initialize('eng');
-    
-    // Optimize for game numbers and text
-    console.log('🎯 Configuring OCR parameters...');
-    await worker.setParameters({
-      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz:,.-/%()[] ',
-      preserve_interword_spaces: '1',
-      tessedit_pageseg_mode: '6', // Assume uniform block of text
-    });
-    
-    // Process the image
-    console.log('🖼️ Processing image...');
-    const { data: { text } } = await worker.recognize(imageDataUrl);
-    
-    console.log('🧹 Terminating worker...');
-    await worker.terminate();
-    
-    console.log('✅ OCR completed. Text length:', text?.length || 0);
-    
-    if (!text || text.trim().length === 0) {
-      throw new Error('No text could be extracted. Image may be too blurry or low quality.');
-    }
-    
-    return text.trim();
-    
-  } catch (error) {
-    console.error('❌ OCR processing failed:', error);
-    throw new Error(`Failed to extract text from battle report: ${error.message}`);
-  }
+interface OCRResult {
+  text: string;
+  confidence: number;
 }
 
-/**
- * Process multiple battle report images
- */
-export async function processBattleReports(images) {
-  console.log(`📋 Processing ${images.length} battle report(s)...`);
-  
-  const extractedTexts = [];
-  
-  for (let i = 0; i < images.length; i++) {
+class OCRService {
+  private static instance: OCRService;
+  private worker: Tesseract.Worker | null = null;
+  private isInitialized: boolean = false;
+  private initPromise: Promise<void> | null = null;
+
+  private constructor() {}
+
+  static getInstance(): OCRService {
+    if (!OCRService.instance) {
+      OCRService.instance = new OCRService();
+    }
+    return OCRService.instance;
+  }
+
+  async initialize(): Promise<void> {
+    // If already initialized, return immediately
+    if (this.isInitialized && this.worker) {
+      return;
+    }
+
+    // If initialization is in progress, wait for it
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
+    // Start new initialization
+    this.initPromise = (async () => {
+      try {
+        console.log('Starting OCR worker initialization...');
+        
+        // Create worker
+        this.worker = await Tesseract.createWorker('eng', 1, {
+          logger: (m) => {
+            if (m.status === 'recognizing text') {
+              console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`);
+            }
+          }
+        });
+
+        console.log('Tesseract.js loaded successfully');
+        this.isInitialized = true;
+      } catch (error) {
+        console.error('Failed to initialize OCR worker:', error);
+        this.worker = null;
+        this.isInitialized = false;
+        this.initPromise = null;
+        throw error;
+      }
+    })();
+
+    return this.initPromise;
+  }
+
+  async recognizeText(imageData: string | HTMLImageElement | HTMLCanvasElement): Promise<OCRResult> {
     try {
-      console.log(`\n--- Processing Report ${i + 1}/${images.length} ---`);
-      const text = await extractTextFromImage(images[i]);
-      extractedTexts.push(`--- Battle Report ${i + 1} ---\n${text}\n`);
+      // Ensure worker is initialized
+      if (!this.isInitialized || !this.worker) {
+        console.log('Initializing OCR worker...');
+        await this.initialize();
+      }
+
+      if (!this.worker) {
+        throw new Error('OCR worker failed to initialize');
+      }
+
+      console.log('Starting OCR for battle report...');
+      
+      // Perform recognition
+      const result = await this.worker.recognize(imageData);
+      
+      console.log('OCR completed successfully');
+      
+      return {
+        text: result.data.text,
+        confidence: result.data.confidence
+      };
     } catch (error) {
-      console.error(`❌ Failed to process report ${i + 1}:`, error.message);
-      extractedTexts.push(`--- Battle Report ${i + 1} [OCR Failed: ${error.message}] ---\n`);
+      console.error('OCR recognition error:', error);
+      
+      // Try to reinitialize on error
+      this.isInitialized = false;
+      this.initPromise = null;
+      
+      throw new Error(`Failed to recognize text: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
-  
-  return extractedTexts.join('\n');
+
+  async terminate(): Promise<void> {
+    if (this.worker) {
+      try {
+        await this.worker.terminate();
+        console.log('OCR worker terminated');
+      } catch (error) {
+        console.error('Error terminating OCR worker:', error);
+      } finally {
+        this.worker = null;
+        this.isInitialized = false;
+        this.initPromise = null;
+      }
+    }
+  }
 }
+
+export const ocrService = OCRService.getInstance();
