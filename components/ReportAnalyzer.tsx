@@ -4,6 +4,8 @@ import { UserProfile, AnalysisResponse, ChatMessage, Language } from '../types';
 import { translations } from '../translations';
 import { analyzeReports, chatWithAIStream } from '../services/aiService';
 import { ocrService } from '../services/ocrService';
+import { battleHistoryService } from '../services/battleHistoryService';
+import { supabase } from '../services/supabaseClient';
 
 const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ profile, lang }) => {
   const t = translations[lang];
@@ -14,7 +16,19 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [chatting, setChatting] = useState(false);
+  const [battleCount, setBattleCount] = useState<number>(0);
+  const [communityStats, setCommunityStats] = useState({ 
+    totalBattles: 0, 
+    pvpBattles: 0, 
+    monsterBattles: 0 
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Get user email from auth
+  const getUserEmail = async (): Promise<string | null> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.user?.email || null;
+  };
 
   // Initialize OCR on component mount
   useEffect(() => {
@@ -36,6 +50,21 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
     };
   }, []);
 
+  // Load battle count and community stats on mount
+  useEffect(() => {
+    const loadStats = async () => {
+      const email = await getUserEmail();
+      if (email) {
+        const count = await battleHistoryService.getBattleCount(email);
+        setBattleCount(count);
+        
+        const stats = await battleHistoryService.getCommunityStats();
+        setCommunityStats(stats);
+      }
+    };
+    loadStats();
+  }, []);
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []) as File[];
     files.forEach(file => {
@@ -46,18 +75,20 @@ const ReportAnalyzer: React.FC<{ profile: UserProfile; lang: Language }> = ({ pr
   };
 
   const handleSendMessage = async () => {
-  if (!input.trim() || chatting) return;
-  const userMsg = input;
-  setInput('');
-  setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
-  setChatting(true);
-  
-  try {
-    let fullResponse = "";
-    setChatMessages(prev => [...prev, { role: 'model', text: "" }]);
+    if (!input.trim() || chatting) return;
     
-    // Create battle context from the analysis result
-    const battleContext = result ? `
+    const userEmail = await getUserEmail();
+    const userMsg = input;
+    setInput('');
+    setChatMessages(prev => [...prev, { role: 'user', text: userMsg }]);
+    setChatting(true);
+    
+    try {
+      let fullResponse = "";
+      setChatMessages(prev => [...prev, { role: 'model', text: "" }]);
+      
+      // Create battle context from the analysis result
+      const battleContext = result ? `
 Battle Report Summary:
 ${result.summary}
 
@@ -66,95 +97,155 @@ ${result.recommendations}
 
 Extracted Data:
 ${result.anonymizedData || 'No data available'}
-    `.trim() : undefined;
-    
-    const stream = chatWithAIStream(chatMessages, userMsg, battleContext);
-    
-    for await (const chunk of stream) {
-      fullResponse += chunk;
-      setChatMessages(prev => {
-        const newMsgs = [...prev];
-        newMsgs[newMsgs.length - 1].text = fullResponse;
-        return newMsgs;
-      });
+      `.trim() : undefined;
+      
+      const stream = chatWithAIStream(chatMessages, userMsg, battleContext, userEmail || undefined);
+      
+      for await (const chunk of stream) {
+        fullResponse += chunk;
+        setChatMessages(prev => {
+          const newMsgs = [...prev];
+          newMsgs[newMsgs.length - 1].text = fullResponse;
+          return newMsgs;
+        });
+      }
+    } catch (err) { 
+      console.error("Chat error:", err);
+      setChatMessages(prev => [...prev, { 
+        role: 'model', 
+        text: `❌ Error: ${err instanceof Error ? err.message : 'Failed to get response'}` 
+      }]);
+    } finally { 
+      setChatting(false); 
     }
-  } catch (err) { 
-    console.error("Chat error:", err);
-    setChatMessages(prev => [...prev, { 
-      role: 'model', 
-      text: `❌ Error: ${err instanceof Error ? err.message : 'Failed to get response'}` 
-    }]);
-  } finally { 
-    setChatting(false); 
-  }
-};
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-  // Only send on Ctrl+Enter or Cmd+Enter, not just Enter
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-    e.preventDefault();
-    handleSendMessage();
-  }
-  // Allow Enter for new lines, Shift+Enter also works for new lines
-};
+    // Only send on Ctrl+Enter or Cmd+Enter, not just Enter
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleSendMessage();
+    }
+    // Allow Enter for new lines
+  };
 
   const handleAnalysis = async () => {
-  if (images.length === 0 || analyzing) return;
-  
-  setAnalyzing(true);
-  setOcrStatus('🔍 Initializing OCR engine...');
-  
-  try {
-    await ocrService.initialize();
+    if (images.length === 0 || analyzing) return;
     
-    setOcrStatus(`📸 Processing ${images.length} battle reports in parallel...`);
+    setAnalyzing(true);
+    setOcrStatus('🔍 Initializing OCR engine...');
     
-    // Process all images in parallel (much faster!)
-    const ocrPromises = images.map(async (imgSrc, i) => {
-      try {
-        const img = new Image();
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = () => reject(new Error(`Failed to load image ${i + 1}`));
-          img.src = imgSrc;
-        });
+    try {
+      const userEmail = await getUserEmail();
+      
+      await ocrService.initialize();
+      
+      setOcrStatus(`📸 Processing ${images.length} battle reports in parallel...`);
+      
+      // Process all images in parallel (much faster!)
+      const ocrPromises = images.map(async (imgSrc, i) => {
+        try {
+          const img = new Image();
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = () => reject(new Error(`Failed to load image ${i + 1}`));
+            img.src = imgSrc;
+          });
+          
+          const result = await ocrService.recognizeText(img);
+          console.log(`✅ Report ${i + 1}/${images.length} complete (${result.confidence}% confidence)`);
+          return result.text;
+        } catch (error) {
+          console.error(`❌ Failed to process image ${i + 1}:`, error);
+          return `[OCR failed for image ${i + 1}]`;
+        }
+      });
+      
+      const ocrResults = await Promise.all(ocrPromises);
+      
+      setOcrStatus('🤖 AI analyzing battle tactics...');
+      
+      // Pass userEmail to save battle
+      const res = await analyzeReports(images, profile, ocrResults, userEmail || undefined);
+      
+      setResult(res);
+      setOcrStatus('✅ Analysis complete!');
+      
+      // Update battle count
+      if (userEmail) {
+        const count = await battleHistoryService.getBattleCount(userEmail);
+        setBattleCount(count);
         
-        const result = await ocrService.recognizeText(img);
-        console.log(`✅ Report ${i + 1}/${images.length} complete (${result.confidence}% confidence)`);
-        return result.text;
-      } catch (error) {
-        console.error(`❌ Failed to process image ${i + 1}:`, error);
-        return `[OCR failed for image ${i + 1}]`;
+        // Refresh community stats
+        const stats = await battleHistoryService.getCommunityStats();
+        setCommunityStats(stats);
       }
-    });
-    
-    const ocrResults = await Promise.all(ocrPromises);
-    
-    setOcrStatus('🤖 AI analyzing battle tactics...');
-    const res = await analyzeReports(images, profile, ocrResults);
-    
-    setResult(res);
-    setOcrStatus('✅ Analysis complete!');
-    setTimeout(() => setOcrStatus(''), 2000);
-    
-    if (res.summary) {
-      setChatMessages([{ 
-        role: 'model', 
-        text: `✅ Analysis complete!\n\n${res.summary.substring(0, 300)}...` 
-      }]);
+      
+      setTimeout(() => setOcrStatus(''), 2000);
+      
+      if (res.summary) {
+        setChatMessages([{ 
+          role: 'model', 
+          text: `✅ Analysis complete! You now have ${battleCount + 1} battles in your history.\n\n${res.summary.substring(0, 300)}...` 
+        }]);
+      }
+    } catch (e: any) {
+      console.error("❌ Analysis Failure:", e);
+      setOcrStatus('');
+      alert(`⚠️ Analysis Failed\n\n${e.message}\n\nTips:\n• Ensure images are clear\n• Check internet connection\n• Try with fewer images first`);
+    } finally {
+      setAnalyzing(false);
+      setOcrStatus('');
     }
-  } catch (e: any) {
-    console.error("❌ Analysis Failure:", e);
-    setOcrStatus('');
-    alert(`⚠️ Analysis Failed\n\n${e.message}\n\nTips:\n• Ensure images are clear\n• Check internet connection\n• Try with fewer images first`);
-  } finally {
-    setAnalyzing(false);
-    setOcrStatus('');
-  }
-};
+  };
 
   return (
     <div className="space-y-6">
+      {/* Privacy Notice */}
+      <div className="bg-blue-900/20 border border-blue-800/50 rounded-lg p-4 text-sm">
+        <div className="flex items-start gap-3">
+          <div className="text-blue-400 mt-0.5">🔒</div>
+          <div>
+            <h4 className="font-bold text-blue-300 mb-1">Community Learning Enabled</h4>
+            <p className="text-slate-300 text-xs leading-relaxed">
+              Your battle <strong>analysis</strong> (AI summary & recommendations) helps improve the AI for everyone. 
+              Your <strong>original screenshots, player names, and personal data are never shared</strong>.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Community Stats Display */}
+      {communityStats.totalBattles > 0 && (
+        <div className="bg-gradient-to-r from-indigo-900/30 to-purple-900/30 border border-indigo-800/50 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <h3 className="text-sm font-black text-indigo-300 uppercase tracking-wider">
+              AI Knowledge Base
+            </h3>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-4 text-center">
+            <div>
+              <div className="text-2xl font-black text-white">{communityStats.totalBattles.toLocaleString()}</div>
+              <div className="text-xs text-slate-400 uppercase tracking-wide">Battle Analyses</div>
+            </div>
+            <div>
+              <div className="text-2xl font-black text-amber-500">{battleCount}</div>
+              <div className="text-xs text-slate-400 uppercase tracking-wide">Your Contribution</div>
+            </div>
+            <div>
+              <div className="text-2xl font-black text-indigo-400">{communityStats.pvpBattles.toLocaleString()}</div>
+              <div className="text-xs text-slate-400 uppercase tracking-wide">PvP Strategies</div>
+            </div>
+          </div>
+          
+          <p className="text-xs text-slate-400 mt-3 text-center">
+            🧠 AI learns from community battle analyses (not raw data)
+          </p>
+        </div>
+      )}
+
       <div className="bg-slate-900 border border-slate-800 p-6 rounded-2xl shadow-xl">
         <h3 className="text-xl font-bold mb-4 flex items-center gap-2 text-white">
           <FileImage className="text-amber-500" /> {t.addReport}
@@ -226,7 +317,7 @@ ${result.anonymizedData || 'No data available'}
                 <li>Use clear, high-resolution screenshots</li>
                 <li>Ensure text is readable and not blurry</li>
                 <li>Crop to show only the battle report</li>
-                <li>Wait for OCR initialization on first load</li>
+                <li>OCR.space processes ~2-3 seconds per image</li>
               </ul>
             </div>
           </div>
@@ -272,6 +363,9 @@ ${result.anonymizedData || 'No data available'}
             <h3 className="font-black text-sm uppercase tracking-widest text-amber-500">
               {t.askQuestions || 'Ask Follow-up Questions'}
             </h3>
+            <p className="text-xs text-slate-500 mt-1">
+              AI has access to {battleCount} of your battles + {communityStats.totalBattles} community analyses
+            </p>
           </div>
           
           <div className="p-4 h-64 overflow-y-auto space-y-3">
@@ -301,7 +395,7 @@ ${result.anonymizedData || 'No data available'}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={t.askSomething || "Ask about the battle..."}
+                placeholder={t.askSomething || "Ask about the battle... (Ctrl+Enter to send)"}
                 className="flex-1 bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm resize-none focus:outline-none focus:border-indigo-500"
                 rows={2}
                 disabled={chatting}
@@ -314,6 +408,9 @@ ${result.anonymizedData || 'No data available'}
                 <Send size={18} />
               </button>
             </div>
+            <p className="text-xs text-slate-500 mt-2 text-center">
+              Press Enter for new line • Ctrl+Enter to send
+            </p>
           </div>
         </div>
       )}
