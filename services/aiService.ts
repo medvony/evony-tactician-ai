@@ -24,7 +24,6 @@ export const analyzeReports = async (
     // Validate API key
     if (!GROQ_API_KEY) {
       console.error('❌ Missing GROQ_API_KEY');
-      console.log('Available env vars:', Object.keys(import.meta.env));
       throw new Error('Groq API key not configured. Please check Vercel environment variables.');
     }
     
@@ -38,12 +37,11 @@ export const analyzeReports = async (
       extractedText = ocrTexts.join('\n\n--- NEXT REPORT ---\n\n');
     } else {
       // Fallback: extract text from images
-      console.log('📸 Step 1: Extracting text from images...');
+      console.log('📸 Extracting text from images...');
       const ocrResults: string[] = [];
       
       for (let i = 0; i < images.length; i++) {
         try {
-          // Create image element from base64
           const img = new Image();
           await new Promise((resolve, reject) => {
             img.onload = resolve;
@@ -51,10 +49,9 @@ export const analyzeReports = async (
             img.src = images[i];
           });
           
-          // Perform OCR
           const result = await ocrService.recognizeText(img);
           ocrResults.push(result.text);
-          console.log(`✅ OCR completed for image ${i + 1} (confidence: ${result.confidence}%)`);
+          console.log(`✅ OCR completed for image ${i + 1}`);
         } catch (error) {
           console.error(`❌ OCR failed for image ${i + 1}:`, error);
           ocrResults.push('[OCR extraction failed for this image]');
@@ -72,15 +69,15 @@ export const analyzeReports = async (
     console.log('📝 Extracted text length:', extractedText.length);
     
     // Step 2: Prepare the analysis prompt
-    console.log('📝 Step 2: Preparing analysis prompt...');
+    console.log('📝 Preparing analysis prompt...');
     const prompt = createAnalysisPrompt(extractedText, profile);
     
     // Step 3: Use Groq (Llama 3.1) for analysis
-    console.log('🤖 Step 3: Analyzing with AI...');
+    console.log('🤖 Analyzing with AI...');
     const analysis = await analyzeWithGroq(prompt);
     
     // Step 4: Parse and structure the response
-    console.log('📊 Step 4: Structuring response...');
+    console.log('📊 Structuring response...');
     const result = parseAnalysisResponse(analysis, extractedText);
     
     console.log('✅ Analysis complete!');
@@ -150,11 +147,6 @@ async function analyzeWithGroq(prompt: string): Promise<string> {
     return content;
   } catch (error: any) {
     console.error('❌ Groq API error:', error);
-    console.error('Error details:', {
-      message: error.message,
-      status: error.status,
-      type: error.type
-    });
     throw new Error(`Groq API error: ${error.message}`);
   }
 }
@@ -167,7 +159,6 @@ async function analyzeWithGeminiFallback(images: string[], profile: UserProfile)
   const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
   const prompt = `Analyze these Evony battle reports for player: ${JSON.stringify(profile)}`;
   
-  // Gemini can handle images directly
   const imageParts = images.map(img => ({
     inlineData: {
       data: img.split(',')[1],
@@ -204,12 +195,22 @@ function parseAnalysisResponse(text: string, originalText: string): AnalysisResp
   };
 }
 
-// Streaming chat function
+// Streaming chat function - FIXED VERSION
 export async function* chatWithAIStream(history: any[], message: string) {
   try {
+    // Convert chat message format: 'model' -> 'assistant', keep 'user' as is
+    const formattedHistory = history.map(msg => ({
+      role: msg.role === 'model' ? 'assistant' : msg.role,  // FIX: Convert 'model' to 'assistant'
+      content: msg.text
+    }));
+
     const stream = await groq.chat.completions.create({
       model: 'llama-3.1-8b-instant',
-      messages: [...history, { role: 'user', content: message }],
+      messages: [
+        { role: 'system', content: 'You are an expert Evony TKR battle analyst. Provide tactical advice based on battle reports.' },
+        ...formattedHistory,
+        { role: 'user', content: message }
+      ],
       stream: true,
       temperature: 0.7,
       max_tokens: 1000,
@@ -220,6 +221,6 @@ export async function* chatWithAIStream(history: any[], message: string) {
     }
   } catch (error: any) {
     console.error('Chat stream error:', error);
-    yield `Error: ${error.message}`;
+    yield `❌ Error: ${error.message}`;
   }
-}
+  }
